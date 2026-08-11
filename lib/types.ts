@@ -1,0 +1,170 @@
+import type { PlanId } from "./plans";
+
+export type Role = "owner" | "manager" | "cashier";
+export type PaymentMethod =
+  "Cash" | "Mobile Money" | "Card" | "Bank" | "Customer Credit" | "Other";
+export type Product = {
+  id: string;
+  name: string;
+  description?: string;
+  category: string;
+  price: number;
+  cost: number;
+  sku: string;
+  barcode: string;
+  qr: string;
+  stock: number;
+  reorder: number;
+  unit: string;
+  supplier?: string;
+  taxable: boolean;
+  active: boolean;
+  favourite?: boolean;
+  createdAt: string;
+};
+export type CartItem = {
+  productId: string;
+  name: string;
+  price: number;
+  cost: number;
+  qty: number;
+  discount: number;
+};
+export type Sale = {
+  id: string;
+  receiptNo: string;
+  createdAt: string;
+  customerId?: string;
+  customerName?: string;
+  cashier: string;
+  items: CartItem[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  total: number;
+  payment: PaymentMethod;
+  paid: number;
+  change: number;
+  status: "completed" | "refunded" | "voided";
+  note?: string;
+  synced: boolean;
+};
+export type Contact = {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  address?: string;
+  notes?: string;
+  balance: number;
+  total: number;
+  lastActivity?: string;
+};
+export type Expense = {
+  id: string;
+  category: string;
+  description: string;
+  amount: number;
+  payment: PaymentMethod;
+  date: string;
+  payee?: string;
+  reference?: string;
+  notes?: string;
+};
+export type Purchase = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  reference: string;
+  date: string;
+  items: { productId: string; name: string; qty: number; cost: number }[];
+  total: number;
+  paid: number;
+  notes?: string;
+};
+export type Movement = {
+  id: string;
+  productId: string;
+  productName: string;
+  type: string;
+  quantity: number;
+  reference: string;
+  user: string;
+  createdAt: string;
+  notes?: string;
+};
+export type Staff = {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  status: "active" | "disabled";
+  lastActivity?: string;
+};
+export type Audit = {
+  id: string;
+  actor: string;
+  action: string;
+  record: string;
+  createdAt: string;
+};
+export type Shift = {
+  id: string;
+  cashier: string;
+  openedAt: string;
+  closedAt?: string;
+  opening: number;
+  expected?: number;
+  counted?: number;
+  status: "open" | "closed";
+};
+export type CustomerRequest = {
+  id: string;
+  product: string;
+  customer: string;
+  phone?: string;
+  quantity: number;
+  notes?: string;
+  status: "open" | "sourced" | "closed";
+  createdAt: string;
+};
+export type ManagedBusiness = {
+  id: string;
+  name: string;
+  owner: string;
+  plan: PlanId;
+  status: "active" | "revoked";
+  createdAt: string;
+};
+export type Business = {
+  name: string;
+  country: string;
+  currency: string;
+  phone: string;
+  email: string;
+  address: string;
+  taxRate: number;
+  taxEnabled: boolean;
+  lowStockThreshold: number;
+  receiptFooter: string;
+  paper: "58mm" | "80mm" | "A4";
+  theme: "light" | "dark" | "system";
+  plan: PlanId;
+};
+export type AppData = {
+  products: Product[];
+  sales: Sale[];
+  customers: Contact[];
+  suppliers: Contact[];
+  expenses: Expense[];
+  purchases: Purchase[];
+  movements: Movement[];
+  staff: Staff[];
+  audit: Audit[];
+  shifts: Shift[];
+  held: { id: string; name: string; items: CartItem[]; createdAt: string }[];
+  requests?: CustomerRequest[];
+  managedBusinesses?: ManagedBusiness[];
+  business: Business;
+  onboarded: boolean;
+};
