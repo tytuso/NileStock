@@ -1,12 +1,9 @@
 node_modules
 .next
 .env.local
-*.log
-coverage
-
-# Local environment and generated files
-env.local
 .env*
 !.env.example
-*.tsbuildinfo
 .vercel
+*.tsbuildinfo
+*.log
+coverage

@@ -86,7 +86,7 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
       d.setFont("helvetica", "normal");
       d.setFontSize(9);
       d.setTextColor(20, 30, 25);
-      d.text(`${i.name} × ${i.qty}`, left, y);
+      d.text(`${i.name}${i.negotiated ? " [NEG]" : ""} × ${i.qty}`, left, y);
       d.setFont("helvetica", "bold");
       d.text(
         money(i.price * i.qty - i.discount * i.qty, b.currency),
@@ -227,7 +227,14 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
           {sale.items.map((i) => (
             <div key={i.productId} className="flex justify-between">
               <span>
-                {i.name} × {i.qty}
+                <span className="inline-flex items-center gap-1">
+                  {i.name} × {i.qty}
+                  {i.negotiated && (
+                    <small className="rounded bg-amber-100 px-1 py-0.5 text-[8px] font-bold tracking-wide text-amber-800">
+                      NEG
+                    </small>
+                  )}
+                </span>
                 <small className="block text-gray-500">
                   {money(i.price, b.currency)} each
                 </small>

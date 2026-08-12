@@ -19,7 +19,7 @@ type Ctx = {
   completeSale: (
     s: Omit<
       Sale,
-      "id" | "receiptNo" | "createdAt" | "cashier" | "status" | "synced"
+      "id" | "receiptNo" | "createdAt" | "status" | "synced"
     >,
   ) => Sale;
   addExpense: (e: Omit<Expense, "id">) => void;
@@ -43,17 +43,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (ready) localStorage.setItem(KEY, JSON.stringify(data));
   }, [data, ready]);
-  useEffect(() => {
-    const on = () => {
-      if (navigator.onLine)
-        setData((d) => ({
-          ...d,
-          sales: d.sales.map((s) => ({ ...s, synced: true })),
-        }));
-    };
-    addEventListener("online", on);
-    return () => removeEventListener("online", on);
-  }, []);
   const api = useMemo<Ctx>(
     () => ({
       data,
@@ -102,9 +91,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             data.sales.map((existing) => existing.receiptNo),
           ),
           createdAt,
-          cashier: role === "cashier" ? "Cashier" : "Shop Owner",
+          cashier: s.cashier.trim(),
           status: "completed",
-          synced: navigator.onLine,
+          synced: false,
         };
         setData((d) => ({
           ...d,

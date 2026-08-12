@@ -3,7 +3,7 @@
 ## 1. Prepare Supabase
 
 - Use the connected **Nile Core** project or create a dedicated Supabase project.
-- For Nile Core, run every `nilestock_` migration in filename order. The current connected project already has them applied.
+- For Nile Core, run every `nilestock_` migration in filename order. **For v10.2.4, run `supabase/migrations/20260811143000_nilestock_cross_device_sales.sql` before deploying the code.**
 - The Nile Core Authentication Site URL may remain shared with another Nile app because NileStock always supplies and validates its own `redirectTo` URL.
 - In **Authentication → URL Configuration → Redirect URLs**, add `http://localhost:3000/**`, `https://nilestock.vercel.app/**`, `https://*-titus-projects-4a3cc808.vercel.app/**`, and production `https://nilestock.nileai.solutions/**`. The team wildcard is required for Google sign-in from Vercel preview deployments.
 - Keep the existing Google provider enabled; its Supabase callback is shared safely with Zabuni.
@@ -34,7 +34,9 @@ Create a private repository, commit the extracted contents, and push the main br
 - Confirm neither account can read the other's products or sales.
 - Create a product, generate and scan its code twice, and verify quantity/total.
 - Complete cash and customer-credit sales; verify stock, payments and customer balances.
-- Disconnect internet, complete a test sale, reconnect and verify a single sync using `offline_id`.
+- On phone A, complete a sale. Refresh phone B while signed into the same business and confirm the receipt appears and stock changes only once.
+- Disconnect phone A, complete a test sale, reconnect and confirm its pending status changes only after the per-sale Supabase write succeeds.
+- Sign into a different test business and confirm it cannot read the first business's receipts.
 - Receive a purchase and verify stock increases and supplier balance.
 - Refund a test sale and verify the original record remains and stock returns.
 - Print 58mm/80mm/A4 receipts and code sheets using the target hardware.

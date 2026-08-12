@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BadgePercent,
   Camera,
   CameraOff,
   CheckCircle2,
@@ -18,6 +19,13 @@ import { useApp } from "@/lib/store";
 import { CartItem, PaymentMethod, Sale } from "@/lib/types";
 import { money, totals } from "@/lib/utils";
 import { findProductByCode } from "@/lib/product-codes";
+import { resolveCashierName } from "@/lib/cashier";
+import {
+  disableNegotiatedPrice,
+  enableNegotiatedPrice,
+  hasValidSalePrice,
+  updateNegotiatedPrice,
+} from "@/lib/negotiated-price";
 import {
   describeCameraIssue,
   isAppleMobileDevice,
@@ -64,8 +72,15 @@ function playScanSuccess() {
   } catch {}
 }
 
-export function POS() {
+export function POS({
+  signedInName,
+  signedInEmail,
+}: {
+  signedInName: string;
+  signedInEmail: string;
+}) {
   const { data, setData, completeSale } = useApp();
+  const signedInCashier = resolveCashierName(signedInName, signedInEmail);
   const [cart, setCart] = useState<CartItem[]>([]),
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
@@ -74,6 +89,7 @@ export function POS() {
     [payOpen, setPayOpen] = useState(false),
     [payment, setPayment] = useState<PaymentMethod>("Cash"),
     [paid, setPaid] = useState(0),
+    [receiptCashier, setReceiptCashier] = useState(signedInCashier),
     [receipt, setReceipt] = useState<Sale | null>(null),
     [scanOpen, setScanOpen] = useState(false),
     [offline, setOffline] = useState(false);
@@ -175,12 +191,14 @@ export function POS() {
   );
   const finish = () => {
     if (payment === "Customer Credit" && !customer) return;
+    if (!cart.every(hasValidSalePrice)) return;
     const c = data.customers.find((x) => x.id === customer);
     const sale = completeSale({
       ...calc,
       items: cart,
       customerId: customer || undefined,
       customerName: c?.name,
+      cashier: resolveCashierName(receiptCashier, signedInEmail),
       payment,
       paid: payment === "Cash" ? paid : calc.total,
       change: payment === "Cash" ? Math.max(0, paid - calc.total) : 0,
@@ -300,44 +318,114 @@ export function POS() {
             </div>
           ) : (
             cart.map((i) => (
-              <Card
-                className="mb-2 flex items-center gap-2 p-3"
-                key={i.productId}
-              >
-                <div className="min-w-0 flex-1">
-                  <b className="block truncate text-sm">{i.name}</b>
-                  <span className="text-xs text-muted">
-                    {money(i.price, data.business.currency)} each
-                  </span>
-                </div>
-                <div className="flex items-center rounded-lg border border-line">
+              <Card className="mb-2 p-3" key={i.productId}>
+                <div className="flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <b className="truncate text-sm">{i.name}</b>
+                      {i.negotiated && (
+                        <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-200">
+                          NEG
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted">
+                      {money(i.price, data.business.currency)} each
+                    </span>
+                  </div>
+                  <div className="flex items-center rounded-lg border border-line">
+                    <button
+                      className="p-2"
+                      aria-label={`Reduce ${i.name} quantity`}
+                      onClick={() =>
+                        setCart((c) =>
+                          c.map((x) =>
+                            x.productId === i.productId
+                              ? { ...x, qty: Math.max(1, x.qty - 1) }
+                              : x,
+                          ),
+                        )
+                      }
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <b className="w-6 text-center text-sm">{i.qty}</b>
+                    <button
+                      className="p-2"
+                      aria-label={`Increase ${i.name} quantity`}
+                      onClick={() => add(i.productId)}
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
                   <button
-                    className="p-2"
                     onClick={() =>
                       setCart((c) =>
-                        c.map((x) =>
-                          x.productId === i.productId
-                            ? { ...x, qty: Math.max(1, x.qty - 1) }
-                            : x,
-                        ),
+                        c.filter((x) => x.productId !== i.productId),
                       )
                     }
+                    className="p-2 text-red-500"
+                    aria-label={`Remove ${i.name} from sale`}
                   >
-                    <Minus size={14} />
-                  </button>
-                  <b className="w-6 text-center text-sm">{i.qty}</b>
-                  <button className="p-2" onClick={() => add(i.productId)}>
-                    <Plus size={14} />
+                    <Trash2 size={15} />
                   </button>
                 </div>
                 <button
+                  type="button"
+                  aria-pressed={Boolean(i.negotiated)}
+                  className={`mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition ${
+                    i.negotiated
+                      ? "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-200"
+                      : "border-line text-muted hover:bg-black/5 dark:hover:bg-white/5"
+                  }`}
                   onClick={() =>
-                    setCart((c) => c.filter((x) => x.productId !== i.productId))
+                    setCart((current) =>
+                      current.map((item) =>
+                        item.productId === i.productId
+                          ? item.negotiated
+                            ? disableNegotiatedPrice(item)
+                            : enableNegotiatedPrice(item)
+                          : item,
+                      ),
+                    )
                   }
-                  className="p-2 text-red-500"
                 >
-                  <Trash2 size={15} />
+                  <BadgePercent size={14} />
+                  {i.negotiated ? "Negotiated price on" : "Negotiate price"}
                 </button>
+                {i.negotiated && (
+                  <label className="mt-2 block rounded-xl border border-amber-200 bg-amber-50/70 p-2.5 dark:border-amber-900 dark:bg-amber-950/30">
+                    <span className="mb-1 block text-[11px] font-bold text-amber-900 dark:text-amber-100">
+                      Enter agreed price ({data.business.currency})
+                    </span>
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min="1"
+                      step="any"
+                      value={i.price || ""}
+                      placeholder="Enter negotiated price"
+                      aria-label={`Agreed price for ${i.name}`}
+                      onChange={(event) =>
+                        setCart((current) =>
+                          current.map((item) =>
+                            item.productId === i.productId
+                              ? updateNegotiatedPrice(
+                                  item,
+                                  Number(event.target.value),
+                                )
+                              : item,
+                          ),
+                        )
+                      }
+                    />
+                    {i.price <= 0 && (
+                      <span className="mt-1 block text-[11px] font-semibold text-red-600 dark:text-red-300">
+                        Enter the agreed price before payment.
+                      </span>
+                    )}
+                  </label>
+                )}
               </Card>
             ))
           )}
@@ -383,6 +471,7 @@ export function POS() {
               </Button>
               <Button
                 className="h-12 flex-1 text-base"
+                disabled={!cart.every(hasValidSalePrice)}
                 onClick={() => {
                   setPaid(0);
                   setPayOpen(true);
@@ -479,11 +568,25 @@ export function POS() {
               ))}
             </Select>
           </Field>
+          <Field label="Cashier name on receipt">
+            <Input
+              autoComplete="name"
+              value={receiptCashier}
+              onChange={(event) => setReceiptCashier(event.target.value)}
+              placeholder={signedInCashier}
+              required
+            />
+            <p className="mt-1.5 text-xs text-muted">
+              Filled from the signed-in account. Edit it here only when the
+              receipt should show a different name.
+            </p>
+          </Field>
           <Button
             className="h-12 w-full"
             disabled={
               (payment === "Cash" && paid < calc.total) ||
-              (payment === "Customer Credit" && !customer)
+              (payment === "Customer Credit" && !customer) ||
+              !receiptCashier.trim()
             }
             onClick={finish}
           >

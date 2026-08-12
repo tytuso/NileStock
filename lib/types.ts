@@ -26,6 +26,8 @@ export type CartItem = {
   productId: string;
   name: string;
   price: number;
+  originalPrice?: number;
+  negotiated?: boolean;
   cost: number;
   qty: number;
   discount: number;

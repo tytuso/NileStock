@@ -1,5 +1,11 @@
 "use client";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -36,6 +42,13 @@ import {
   workspaceBackupKey,
 } from "@/lib/workspace-backup";
 import type { User } from "@supabase/supabase-js";
+import {
+  buildCloudSaleRows,
+  markSalesSynced,
+  mergeCloudSales,
+  parseCloudSale,
+  salesSyncFingerprint,
+} from "@/lib/sale-sync";
 type Session = {
   email: string;
   name: string;
@@ -103,6 +116,7 @@ export function Entry() {
     [resendBusy, setResendBusy] = useState(false),
     [authBusy, setAuthBusy] = useState(false),
     [cloudReady, setCloudReady] = useState(false),
+    [syncPulse, setSyncPulse] = useState(0),
     [installHelp, setInstallHelp] = useState(false),
     [install, setInstall] = useState<any>(null),
     [menu, setMenu] = useState(false),
@@ -111,7 +125,8 @@ export function Entry() {
     menuButton = useRef<HTMLButtonElement>(null),
     authRequestActive = useRef(false),
     hydratedUser = useRef<string | null>(null),
-    hydratingUser = useRef<string | null>(null);
+    hydratingUser = useRef<string | null>(null),
+    lastUploadedSales = useRef("");
   useLayoutEffect(() => {
     if (session === null) document.documentElement.classList.remove("dark");
   }, [session]);
@@ -151,8 +166,8 @@ export function Entry() {
       const name = String(
         user.user_metadata?.full_name ||
           user.user_metadata?.name ||
-          email.split("@")[0] ||
-          "Shop Owner",
+          email ||
+          "Signed-in user",
       );
       const requestedBusiness = String(
         user.user_metadata?.business_name || `${name}'s Shop`,
@@ -170,24 +185,30 @@ export function Entry() {
           await supabase.auth.signOut();
           return;
         }
-        const [businessResult, memberResult, workspaceResult] = await Promise.all([
-          supabase
-            .from("nilestock_businesses")
-            .select("name,plan,status")
-            .eq("id", businessId)
-            .single(),
-          supabase
-            .from("nilestock_business_members")
-            .select("role,status")
-            .eq("business_id", businessId)
-            .eq("user_id", user.id)
-            .single(),
-          supabase
-            .from("nilestock_workspace_data")
-            .select("payload,updated_at")
-            .eq("business_id", businessId)
-            .maybeSingle(),
-        ]);
+        const [businessResult, memberResult, workspaceResult, salesResult] =
+          await Promise.all([
+            supabase
+              .from("nilestock_businesses")
+              .select("name,plan,status")
+              .eq("id", businessId)
+              .single(),
+            supabase
+              .from("nilestock_business_members")
+              .select("role,status")
+              .eq("business_id", businessId)
+              .eq("user_id", user.id)
+              .single(),
+            supabase
+              .from("nilestock_workspace_data")
+              .select("payload,updated_at")
+              .eq("business_id", businessId)
+              .maybeSingle(),
+            supabase
+              .from("nilestock_sales")
+              .select("payload")
+              .eq("business_id", businessId)
+              .order("created_at", { ascending: false }),
+          ]);
         if (!active) return;
         if (businessResult.error || memberResult.error) {
           setAuthMessage(
@@ -268,6 +289,32 @@ export function Entry() {
             plan: businessResult.data.plan as AppData["business"]["plan"],
           },
         };
+        if (salesResult.error)
+          console.error(
+            "NileStock could not download cross-device sales. Apply the v10.2.4 Supabase migration, then retry.",
+            salesResult.error,
+          );
+        else {
+          const cloudSalePayloads = (salesResult.data || []).map(
+            (row) => row.payload,
+          );
+          workspace = mergeCloudSales(workspace, cloudSalePayloads);
+          const confirmedSaleIds = new Set(
+            cloudSalePayloads.flatMap((payload) => {
+              const sale = parseCloudSale(payload);
+              return sale ? [sale.id] : [];
+            }),
+          );
+          workspace = {
+            ...workspace,
+            sales: workspace.sales.map((sale) =>
+              sale.synced && !confirmedSaleIds.has(sale.id)
+                ? { ...sale, synced: false }
+                : sale,
+            ),
+          };
+        }
+        lastUploadedSales.current = "";
         setData(workspace);
         setRole(memberResult.data.role as "owner" | "manager" | "cashier");
         setSession({
@@ -355,6 +402,104 @@ export function Entry() {
     }, 700);
     return () => clearTimeout(timeout);
   }, [cloudReady, data, session]);
+  const pullCloudSales = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (
+      !supabase ||
+      !cloudReady ||
+      !session?.cloud ||
+      !session.businessId
+    )
+      return;
+    const result = await supabase
+      .from("nilestock_sales")
+      .select("payload")
+      .eq("business_id", session.businessId)
+      .order("created_at", { ascending: false });
+    if (result.error) {
+      console.error(
+        "NileStock could not refresh cross-device sales. The local copy remains safe.",
+        result.error,
+      );
+      return;
+    }
+    setData((current) =>
+      mergeCloudSales(
+        current,
+        (result.data || []).map((row) => row.payload),
+      ),
+    );
+  }, [cloudReady, session?.businessId, session?.cloud, setData]);
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (
+      !supabase ||
+      !cloudReady ||
+      !session?.cloud ||
+      !session.businessId ||
+      !session.userId
+    )
+      return;
+
+    const fingerprint = salesSyncFingerprint(data.sales);
+    const syncKey = `${session.businessId}:${fingerprint}`;
+    if (lastUploadedSales.current === syncKey) return;
+    if (!data.sales.length) {
+      lastUploadedSales.current = syncKey;
+      return;
+    }
+
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      void (async () => {
+        const rows = buildCloudSaleRows(
+          data.sales,
+          session.businessId!,
+          session.userId!,
+        );
+        for (let index = 0; index < rows.length; index += 100) {
+          const result = await supabase
+            .from("nilestock_sales")
+            .upsert(rows.slice(index, index + 100), {
+              onConflict: "business_id,id",
+            });
+          if (result.error) {
+            console.error(
+              "NileStock sale sync failed; receipts remain queued safely on this device.",
+              result.error,
+            );
+            return;
+          }
+        }
+        if (cancelled) return;
+        lastUploadedSales.current = syncKey;
+        const confirmedIds = new Set(rows.map((row) => row.id));
+        setData((current) => markSalesSynced(current, confirmedIds));
+      })();
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [cloudReady, data.sales, session, setData, syncPulse]);
+  useEffect(() => {
+    if (!cloudReady || !session?.cloud) return;
+    const refresh = () => {
+      setSyncPulse((current) => current + 1);
+      void pullCloudSales();
+    };
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    addEventListener("online", refresh);
+    addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      removeEventListener("online", refresh);
+      removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
+  }, [cloudReady, pullCloudSales, session?.cloud]);
   useEffect(() => {
     if (!menu) return;
     const closeOutside = (event: PointerEvent) => {
@@ -535,7 +680,7 @@ export function Entry() {
       const supabase = getSupabaseBrowserClient();
       if (supabase) {
         const updatedAt = new Date().toISOString();
-        await Promise.all([
+        const saves: PromiseLike<unknown>[] = [
           supabase.from("nilestock_workspace_data").upsert({
             business_id: session.businessId,
             payload: data,
@@ -546,7 +691,20 @@ export function Entry() {
             .from("nilestock_businesses")
             .update({ name: data.business.name, updated_at: updatedAt })
             .eq("id", session.businessId),
-        ]).catch(() => undefined);
+        ];
+        if (data.sales.length)
+          saves.push(
+            supabase.from("nilestock_sales").upsert(
+              buildCloudSaleRows(
+                data.sales,
+                session.businessId,
+                session.userId,
+                updatedAt,
+              ),
+              { onConflict: "business_id,id" },
+            ),
+          );
+        await Promise.all(saves).catch(() => undefined);
         await supabase.auth.signOut();
       }
     }

@@ -1,4 +1,19 @@
-# NileStock v10.2.3
+# NileStock v10.2.5
+
+## v10.2.5 optional negotiated pricing
+
+- Normal product prices and checkout continue to work exactly as before.
+- A cashier may activate **Negotiate price** for an individual cart product, then enter the agreed selling price.
+- Turning negotiation off restores the product's original listed price.
+- Negotiated items carry a small **NEG** marker in the cart, saved sale, printed receipt and PDF receipt.
+- Negotiated pricing is included in existing cross-device sale payloads. No new Supabase migration is required after the v10.2.4 sales migration has been applied.
+
+## v10.2.4 cross-device and cashier update
+
+- Each sale is now stored as its own protected Supabase record. A refresh, app focus, or restored connection merges receipts created on another phone without deducting stock twice.
+- Existing receipts are backfilled automatically on the first successful v10.2.4 sync. Offline receipts remain local and show pending until Supabase confirms their upload.
+- New receipts use the signed-in account name (or email when no useful name exists) as the cashier. Checkout includes an editable **Cashier name on receipt** field for an intentional override.
+- Apply `supabase/migrations/20260811143000_nilestock_cross_device_sales.sql` to Nile Core before deploying this version.
 
 ## v10.2.3 final-build notes
 
@@ -53,7 +68,7 @@ The **Preview workspace** button remains local-only for safe evaluation. Real em
 ## Supabase setup
 
 1. NileStock currently uses the existing **Nile Core** Supabase project shared with Zabuni.
-2. Apply the shared-project migrations in filename order, including the Pro AI usage and founder access migrations. All objects use a `nilestock_` prefix.
+2. Apply the shared-project migrations in filename order, including `20260811143000_nilestock_cross_device_sales.sql`. All objects use a `nilestock_` prefix.
 3. In **Authentication → Providers → Google**, keep Google enabled as it is for Zabuni.
 4. In **Authentication → URL Configuration**, add `http://localhost:3000/**`, `https://nilestock.vercel.app/**`, and the final NileStock domain to Redirect URLs.
 5. If moving NileStock to another project, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and Vercel.
@@ -88,7 +103,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md). The application works without external image
 - **Stock accountability:** Product creation, purchase receipt, sales, refunds, adjustments, and stocktakes create ledger movements.
 - **Receipts:** Every sale creates a retained receipt in Sales. Print with thermal/A4 styles, create a real PDF, use native sharing, or open a prefilled WhatsApp message.
 - **Customer debt:** Select Customer Credit at checkout and a customer. Record later repayment from Customers; repayment is not mixed with sales revenue.
-- **Offline:** The service worker caches the app shell. Browser-held data remains available; sales completed offline are marked pending and switch to synced when connectivity returns. In a Supabase integration, submit queued sales with their `offline_id` through `complete_sale`.
+- **Offline and multiple phones:** The service worker caches the app shell. Browser-held data remains available; sales completed offline stay pending until the per-sale Supabase upsert succeeds. Signing in to the same business on another phone downloads and safely merges those confirmed receipts.
 - **Customer requests:** Record products customers wanted but could not find, track sourcing status, and export a purchasing PDF.
 - **Report centre:** Every plan can read current daily, weekly, monthly, profit, inventory, expense, credit, supplier and request reports. Business and Pro accounts unlock branded PDF downloads and WhatsApp sharing.
 - **AI adviser:** Pro accounts can ask business evaluation, strategy, product opportunity and stock questions grounded in live NileStock records. Contact details are excluded from the model context.
@@ -117,8 +132,9 @@ Receipts, code sheets and business-report PDFs include the business name, addres
 - Monetary values are integers in the browser and PostgreSQL `bigint` (minor currency units), avoiding floating-point drift.
 - Core automation is calculation/rule based. AI calls use a server-only OpenAI key and are checked against the authoritative Pro plan before business context is sent; checkout never depends on AI.
 - Camera scanning uses browser APIs through `html5-qrcode`; USB/Bluetooth scanners work through the focused keyboard input.
+- A business-specific JSON workspace remains the offline snapshot, while receipts also use append-style `nilestock_sales` rows so concurrent phones do not overwrite one another's sales.
 - PDF and code generation are client-side using open-source libraries; there is no per-receipt or per-code charge.
 
 ## Security before public launch
 
-Test the RLS policies with at least two separate businesses before accepting real sales. Configure storage policies before enabling logo/product-image uploads. NileStock currently syncs each business workspace as isolated JSON while retaining offline local storage; the expanded relational migration remains available for a later transaction-by-transaction backend phase.
+Test the RLS policies with at least two separate businesses before accepting real sales. Configure storage policies before enabling logo/product-image uploads. NileStock retains an isolated JSON workspace for offline recovery and uses RLS-protected per-sale rows for cross-device receipts; other workspace collections still use the business snapshot.

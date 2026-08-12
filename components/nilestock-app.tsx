@@ -255,6 +255,7 @@ export function NileStockApp({
           <button
             className="ml-auto lg:hidden"
             onClick={() => setMobile(false)}
+            aria-label="Close navigation menu"
           >
             <X />
           </button>
@@ -316,7 +317,11 @@ export function NileStockApp({
         className={`transition-all ${collapsed ? "lg:pl-[74px]" : "lg:pl-64"}`}
       >
         <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-line bg-[linear-gradient(100deg,rgba(238,252,246,.96),rgba(239,248,255,.96),rgba(246,244,255,.96))] px-4 backdrop-blur dark:bg-[linear-gradient(100deg,rgba(13,43,32,.96),rgba(15,35,49,.96),rgba(29,27,48,.96))] lg:px-7">
-          <button className="lg:hidden" onClick={() => setMobile(true)}>
+          <button
+            className="lg:hidden"
+            onClick={() => setMobile(true)}
+            aria-label="Open navigation menu"
+          >
             <Menu />
           </button>
           <button
@@ -382,7 +387,12 @@ export function NileStockApp({
         </header>
         <main className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_18%_6%,rgba(65,205,148,.10),transparent_28%),radial-gradient(circle_at_88%_8%,rgba(104,165,240,.12),transparent_30%)] p-4 lg:p-7">
           {page === "Overview" && <Overview go={setPage} />}{" "}
-          {page === "Sale" && <POS />}
+          {page === "Sale" && (
+            <POS
+              signedInName={session.name}
+              signedInEmail={session.email}
+            />
+          )}
           {page === "Products" && <Products go={setPage} />}
           {page === "Import Products" && <ImportProducts go={setPage} />}
           {page === "Codes" && (
@@ -1586,7 +1596,9 @@ function Sales() {
                   setData((d) => ({
                     ...d,
                     sales: d.sales.map((s) =>
-                      s.id === selected.id ? { ...s, status: "refunded" } : s,
+                      s.id === selected.id
+                        ? { ...s, status: "refunded", synced: false }
+                        : s,
                     ),
                     products: d.products.map((p) => {
                       const i = selected.items.find(
