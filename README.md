@@ -1,4 +1,12 @@
-# NileStock v10.2.6
+# NileStock v10.2.7
+
+## v10.2.7 premium receipts
+
+- Redesigned on-screen and PDF receipts with clear receipt details, item columns, totals and payment panels.
+- Uses the business initials as the receipt emblem instead of presenting NileStock as the seller.
+- Shows `Prepared by`, customer identity, an `N` negotiated-price marker and a readable marker legend.
+- Keeps 58mm, 80mm and A4 printing, PDF download, native sharing and WhatsApp PDF handoff.
+- Includes a project-local Vitest configuration so tests do not load unrelated parent-drive Vite files on Windows.
 
 ## v10.2.6 polished PDF reports
 

@@ -103,7 +103,7 @@ button {
     height: auto !important;
     min-height: 0 !important;
     margin: 0 !important;
-    padding: 6mm !important;
+    padding: 0 !important;
     overflow: visible !important;
     background: #fff !important;
     color: #000 !important;
@@ -116,7 +116,7 @@ button {
   .receipt-print.receipt-paper-58mm {
     width: 58mm !important;
     max-width: 58mm !important;
-    padding: 4mm !important;
+    padding: 0 !important;
     font-size: 10px !important;
   }
   .receipt-print.receipt-paper-80mm {
@@ -140,6 +140,21 @@ button {
     color: #fff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+  }
+  .receipt-print .receipt-accent {
+    background: linear-gradient(90deg, #07523d, #0d7a53, #3691c9) !important;
+  }
+  .receipt-print .receipt-status,
+  .receipt-print .receipt-total {
+    background: #ecf9f2 !important;
+  }
+  .receipt-print .receipt-panel,
+  .receipt-print .receipt-item-row:nth-child(odd) {
+    background: #f7faf8 !important;
+  }
+  .receipt-print .receipt-items-head {
+    background: #07523d !important;
+    color: #fff !important;
   }
   .code-print {
     position: absolute !important;

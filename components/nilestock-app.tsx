@@ -25,6 +25,7 @@ import {
   PanelLeftClose,
   Plus,
   ReceiptText,
+  RefreshCw,
   Search,
   Settings,
   ShoppingBag,
@@ -174,7 +175,8 @@ export function NileStockApp({
     [mobile, setMobile] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [search, setSearch] = useState(false),
-    [installPrompt, setInstallPrompt] = useState<any>(null);
+    [installPrompt, setInstallPrompt] = useState<any>(null),
+    [refreshing, setRefreshing] = useState(false);
   const pageKey = `nilestock.active-page.${session.email.toLowerCase()}`;
   const initials = session.name
     .split(/\s+/)
@@ -337,6 +339,24 @@ export function NileStockApp({
             </p>
           </div>
           <div className="ml-auto flex gap-1">
+            <Button
+              variant="ghost"
+              className="h-9 w-9 p-0"
+              disabled={refreshing}
+              aria-label="Refresh NileStock"
+              title="Refresh app"
+              onClick={() => {
+                setRefreshing(true);
+                window.setTimeout(() => {
+                  window.location.reload();
+                }, 150);
+              }}
+            >
+              <RefreshCw
+                size={18}
+                className={refreshing ? "animate-spin" : ""}
+              />
+            </Button>
             <Button
               variant="ghost"
               className="h-9 w-9 p-0"
