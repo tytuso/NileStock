@@ -1,4 +1,4 @@
-const DEFAULT_NILESTOCK_URL = "https://nilestock.vercel.app/";
+const DEFAULT_NILESTOCK_URL = "https://nilestock.shop/";
 
 type RedirectSources = {
   configuredUrl?: string | null;
@@ -21,10 +21,13 @@ function normalizeUrl(value?: string | null) {
 
 function isNileStockHost(hostname: string) {
   const host = hostname.toLowerCase();
+
   return (
     host === "localhost" ||
     host === "127.0.0.1" ||
     host === "[::1]" ||
+    host === "nilestock.shop" ||
+    host === "www.nilestock.shop" ||
     host === "nilestock.vercel.app" ||
     host === "nilestock.nileai.solutions" ||
     (host.startsWith("nilestock-") && host.endsWith(".vercel.app"))
@@ -32,9 +35,9 @@ function isNileStockHost(hostname: string) {
 }
 
 /**
- * Resolves an OAuth/email return URL that belongs to NileStock. This prevents
- * a shared Supabase project's Site URL from becoming NileStock's intentional
- * auth destination.
+ * Resolves an OAuth/email return URL that belongs to NileStock.
+ * This prevents the shared Supabase project's Site URL from becoming
+ * NileStock's intentional auth destination.
  */
 export function resolveNileStockAuthRedirect({
   configuredUrl,
@@ -43,7 +46,10 @@ export function resolveNileStockAuthRedirect({
 }: RedirectSources) {
   for (const source of [configuredUrl, currentOrigin, deploymentUrl]) {
     const url = normalizeUrl(source);
-    if (url && isNileStockHost(url.hostname)) return `${url.origin}/`;
+
+    if (url && isNileStockHost(url.hostname)) {
+      return `${url.origin}/`;
+    }
   }
 
   return DEFAULT_NILESTOCK_URL;
