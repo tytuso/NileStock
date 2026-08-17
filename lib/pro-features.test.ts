@@ -5,6 +5,7 @@ import {
   PLAN_DEFINITIONS,
   hasMinimumPlan,
   isProPlan,
+  productLimit,
   receiptHistoryLimit,
 } from "./plans";
 import { buildReportSnapshot } from "./reports";
@@ -93,12 +94,15 @@ describe("Pro access", () => {
     expect(PLAN_DEFINITIONS.pro.features.join(" ")).toContain("AI");
   });
 
-  it("unlocks barcode downloads from Starter", () => {
+  it("unlocks barcode downloads from Lite", () => {
     expect(hasMinimumPlan("free", "starter")).toBe(false);
     expect(hasMinimumPlan("starter", "starter")).toBe(true);
-    expect(PLAN_DEFINITIONS.starter.price).toBe(25_000);
-    expect(PLAN_DEFINITIONS.business.price).toBe(50_000);
-    expect(PLAN_DEFINITIONS.pro.price).toBe(100_000);
+    expect(PLAN_DEFINITIONS.starter.price).toBe(9_500);
+    expect(PLAN_DEFINITIONS.business.price).toBe(49_500);
+    expect(PLAN_DEFINITIONS.pro.price).toBe(99_500);
+    expect(productLimit("free")).toBe(10);
+    expect(productLimit("starter")).toBe(100);
+    expect(productLimit("business")).toBeNull();
   });
 
   it("increases receipt history by plan without removing sales records", () => {

@@ -1,50 +1,72 @@
-# NileStock deployment
+# NileStock v10.3.1 deployment — nilestock.shop
 
-## 1. Prepare Supabase
+## 1. Keep the working production database
 
-- Use the connected **Nile Core** project or create a dedicated Supabase project.
-- For Nile Core, run every `nilestock_` migration in filename order. **For v10.2.4, run `supabase/migrations/20260811143000_nilestock_cross_device_sales.sql` before deploying the code.**
-- The Nile Core Authentication Site URL may remain shared with another Nile app because NileStock always supplies and validates its own `redirectTo` URL.
-- In **Authentication → URL Configuration → Redirect URLs**, add `http://localhost:3000/**`, `https://nilestock.vercel.app/**`, `https://*-titus-projects-4a3cc808.vercel.app/**`, and production `https://nilestock.nileai.solutions/**`. The team wildcard is required for Google sign-in from Vercel preview deployments.
-- Keep the existing Google provider enabled; its Supabase callback is shared safely with Zabuni.
-- Keep Row Level Security enabled. Do not add permissive `anon` policies.
+NileStock continues to use the existing `nilestock_` tables in Nile Core. The cross-device sales migration `20260811143000_nilestock_cross_device_sales.sql` is already part of this bundle. If it is already applied in production, **do not apply it again just because you changed domains**.
 
-## 2. Push to GitHub
+The customer-facing Starter plan was renamed **Lite** and repriced to UGX 9,500, but its internal database ID remains `starter`. That means the new pricing does **not** require a database plan migration.
 
-Create a private repository, commit the extracted contents, and push the main branch. Do not commit `.env.local`.
+## 2. Local test before replacing production
 
-## 3. Deploy on Vercel
+```powershell
+npm install
+npm run typecheck
+npm test
+npm run dev
+```
 
-1. In Vercel, select **Add New → Project** and import the repository.
-2. Framework preset: **Next.js**. Build command: `npm run build`. Output settings: default.
-3. Add environment variables:
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
-   - `NEXT_PUBLIC_SITE_URL=https://nilestock.vercel.app` (replace with the custom NileStock domain after it is connected)
-   - `NEXT_PUBLIC_FOUNDER_EMAIL=your-private-founder-email`
-   - `OPENAI_API_KEY` (server-only; never prefix with `NEXT_PUBLIC_`)
-   - `OPENAI_MODEL=gpt-5.6-luna`
-4. Deploy.
-5. Add `nilestock.nileai.solutions` under **Project → Settings → Domains** and apply the DNS record Vercel provides only when the verified preview is ready to promote.
-6. Return to Supabase Auth URL Configuration and confirm the final custom-domain URL.
+Open `http://localhost:3000`. Test sign-in, product creation, one sale, receipt PDF, barcode/QR preview, Billing and the Help page. For phone camera testing, use the production HTTPS domain rather than a plain LAN HTTP URL.
 
-## 4. Validate before accepting real sales
+## 3. Push this release to GitHub
 
-- Sign up two test owners and create two businesses.
-- Confirm neither account can read the other's products or sales.
-- Create a product, generate and scan its code twice, and verify quantity/total.
-- Complete cash and customer-credit sales; verify stock, payments and customer balances.
-- On phone A, complete a sale. Refresh phone B while signed into the same business and confirm the receipt appears and stock changes only once.
-- Disconnect phone A, complete a test sale, reconnect and confirm its pending status changes only after the per-sale Supabase write succeeds.
-- Sign into a different test business and confirm it cannot read the first business's receipts.
-- Receive a purchase and verify stock increases and supplier balance.
-- Refund a test sale and verify the original record remains and stock returns.
-- Print 58mm/80mm/A4 receipts and code sheets using the target hardware.
-- Test Android Chrome and iPhone Safari camera permissions and PWA installation.
+After the local checks pass, commit the v10.3.1 files to the NileStock repository. Do not commit `.env.local`.
 
-## 5. Operational recommendations
+## 4. Vercel environment variables
 
-- Enable Supabase point-in-time recovery or scheduled backups before meaningful production volume.
-- Use a custom SMTP sender for authentication emails.
-- Set up error monitoring only if desired; NileStock core does not require it.
-- Never place a service-role key in a `NEXT_PUBLIC_` variable.
+Keep the existing Supabase values and set:
+
+```env
+NEXT_PUBLIC_SITE_URL=https://nilestock.shop
+NEXT_PUBLIC_FOUNDER_EMAIL=your-founder-email
+```
+
+Also keep `OPENAI_API_KEY` and `OPENAI_MODEL` only if Pro AI is enabled. Never expose service-role or AI secrets with a `NEXT_PUBLIC_` prefix.
+
+## 5. Connect nilestock.shop
+
+1. In Vercel open the NileStock project → **Settings → Domains**.
+2. Add `nilestock.shop`.
+3. Also add `www.nilestock.shop` and configure it to redirect to the apex domain if Vercel offers that option.
+4. Vercel will display the DNS records it expects.
+5. In Hostinger → Domains → `nilestock.shop` → DNS / Nameservers, add **the exact records Vercel shows**. Do not guess an A-record IP from an old tutorial.
+6. Wait until Vercel marks the domain valid and HTTPS is issued.
+
+The current product combines marketing, sign-in and the authenticated app, so **no `app.nilestock.shop` subdomain is required now**. Use the valuable short apex domain for the whole product. A separate `app.` subdomain only becomes useful later if the marketing website and product are split into different deployments.
+
+## 6. Supabase authentication URLs
+
+In Supabase → Authentication → URL Configuration:
+
+- Site URL: `https://nilestock.shop`
+- Redirect URL: `https://nilestock.shop/**`
+- Optional redirect: `https://www.nilestock.shop/**`
+- Keep `http://localhost:3000/**` for local development.
+- Keep any Vercel preview URL patterns you actively use for testing.
+
+Google sign-in still returns through Supabase's OAuth callback; changing the public NileStock domain does not mean creating a new Google callback that bypasses Supabase.
+
+## 7. Production smoke test
+
+- Open `https://nilestock.shop` on desktop.
+- Open it on iPhone Safari and Android Chrome.
+- Sign in and confirm the same workspace loads.
+- Complete a sale on one device and confirm it syncs to the other without a manual browser refresh after reconnection/focus.
+- Go offline after one successful online load, complete a test sale, reconnect and verify it syncs.
+- Generate a product with a blank barcode and confirm NileStock creates a code/QR value.
+- Test the existing camera scanner on iPhone without applying the experimental camera patch that previously caused instability.
+- Download/share one receipt and one allowed report.
+- Check `/robots.txt`, `/sitemap.xml`, `/privacy` and `/terms`.
+
+## 8. Search launch
+
+After the domain is live, add `https://nilestock.shop` to Google Search Console and submit `https://nilestock.shop/sitemap.xml`. Search indexing is not instant; the technical SEO files only make the site eligible and easier to crawl.

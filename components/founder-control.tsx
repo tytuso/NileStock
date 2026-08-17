@@ -191,7 +191,7 @@ export function FounderControl({ currentBusinessId }: { currentBusinessId?: stri
                       }
                     >
                       <option value="free">Free</option>
-                      <option value="starter">Starter</option>
+                      <option value="starter">Lite</option>
                       <option value="business">Business</option>
                       <option value="pro">Pro</option>
                     </Select>

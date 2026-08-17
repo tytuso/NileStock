@@ -31,6 +31,8 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase";
 import type { AppData } from "@/lib/types";
+import type { PlanId } from "@/lib/plans";
+import { OFFLINE_PAID_LEASE_MS, entitlementKey, parseOfflineEntitlement, resolveOfflineAccess } from "@/lib/offline-entitlement";
 import { isRepeatedSignup } from "@/lib/auth-account";
 import { resolveNileStockAuthRedirect } from "@/lib/auth-redirect";
 import {
@@ -56,6 +58,10 @@ type Session = {
   cloud?: boolean;
   userId?: string;
   businessId?: string;
+  businessName?: string;
+  offlineRestricted?: boolean;
+  lastVerifiedPlan?: PlanId;
+  offlineLeaseExpiresAt?: number;
 };
 function authRedirectUrl() {
   return resolveNileStockAuthRedirect({
@@ -119,6 +125,7 @@ export function Entry() {
     [syncPulse, setSyncPulse] = useState(0),
     [installHelp, setInstallHelp] = useState(false),
     [install, setInstall] = useState<any>(null),
+    [installedApp, setInstalledApp] = useState(false),
     [menu, setMenu] = useState(false),
     [pricingAnnual, setPricingAnnual] = useState(false);
   const menuPanel = useRef<HTMLElement>(null),
@@ -126,17 +133,30 @@ export function Entry() {
     authRequestActive = useRef(false),
     hydratedUser = useRef<string | null>(null),
     hydratingUser = useRef<string | null>(null),
-    lastUploadedSales = useRef("");
+    lastUploadedSales = useRef(""),
+    offlineBaseline = useRef("");
   useLayoutEffect(() => {
     if (session === null) document.documentElement.classList.remove("dark");
   }, [session]);
   useEffect(() => {
+    const standalone = () =>
+      matchMedia("(display-mode: standalone)").matches ||
+      Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
+    setInstalledApp(standalone());
     const capture = (e: Event) => {
       e.preventDefault();
       setInstall(e);
     };
+    const installed = () => {
+      setInstalledApp(true);
+      setInstall(null);
+    };
     addEventListener("beforeinstallprompt", capture);
-    return () => removeEventListener("beforeinstallprompt", capture);
+    addEventListener("appinstalled", installed);
+    return () => {
+      removeEventListener("beforeinstallprompt", capture);
+      removeEventListener("appinstalled", installed);
+    };
   }, []);
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -172,6 +192,83 @@ export function Entry() {
       const requestedBusiness = String(
         user.user_metadata?.business_name || `${name}'s Shop`,
       );
+      const cachedBusinessId = localStorage.getItem("nilestock.cloud.businessId");
+      const cachedSessionRaw = localStorage.getItem("nilestock.session");
+      let cachedSession: Session | null = null;
+      try {
+        cachedSession = cachedSessionRaw
+          ? (JSON.parse(cachedSessionRaw) as Session)
+          : null;
+      } catch {
+        cachedSession = null;
+      }
+
+      if (!navigator.onLine && cachedBusinessId) {
+        const backup = parseWorkspaceBackup(
+          localStorage.getItem(workspaceBackupKey(cachedBusinessId)),
+        );
+        const legacy = parseLegacyWorkspace(
+          localStorage.getItem("nilestock.v3.clean"),
+          email,
+          cachedSession?.businessName || requestedBusiness,
+        );
+        const offlineWorkspace = backup?.payload || legacy;
+        if (offlineWorkspace) {
+          const offlineRole =
+            offlineWorkspace.staff.find(
+              (staff) => staff.email.toLowerCase() === email.toLowerCase(),
+            )?.role || "owner";
+          const cachedEntitlement = parseOfflineEntitlement(
+            localStorage.getItem(entitlementKey(cachedBusinessId)),
+          );
+          const access = resolveOfflineAccess(
+            offlineWorkspace.business.plan,
+            cachedEntitlement,
+          );
+          const runtimeWorkspace = access.restricted
+            ? { ...offlineWorkspace, business: { ...offlineWorkspace.business, plan: access.effectivePlan } }
+            : offlineWorkspace;
+          if (cachedEntitlement)
+            localStorage.setItem(
+              entitlementKey(cachedBusinessId),
+              JSON.stringify({
+                ...cachedEntitlement,
+                lastSeenAt: Math.max(Date.now(), cachedEntitlement.lastSeenAt || cachedEntitlement.verifiedAt),
+              }),
+            );
+          const offlineSession: Session = {
+            email,
+            name: cachedSession?.name || name,
+            founder:
+              email.toLowerCase() ===
+              (
+                process.env.NEXT_PUBLIC_FOUNDER_EMAIL ||
+                "opiotitus333@gmail.com"
+              ).toLowerCase(),
+            cloud: true,
+            userId: user.id,
+            businessId: cachedBusinessId,
+            businessName: offlineWorkspace.business.name,
+            offlineRestricted: access.restricted,
+            lastVerifiedPlan: access.sourcePlan,
+            offlineLeaseExpiresAt: access.expiresAt || undefined,
+          };
+          offlineBaseline.current = JSON.stringify(runtimeWorkspace);
+          setData(runtimeWorkspace);
+          setRole(offlineRole);
+          setSession(offlineSession);
+          localStorage.setItem(
+            "nilestock.session",
+            JSON.stringify(offlineSession),
+          );
+          hydratedUser.current = user.id;
+          setCloudReady(false);
+          setAuth(null);
+          setAuthMessage("");
+          return;
+        }
+      }
+
       try {
         const { data: businessId, error: ensureError } = await supabase.rpc(
           "ensure_nilestock_business",
@@ -218,6 +315,16 @@ export function Entry() {
           );
           return;
         }
+        const entitlementVerifiedAt = Date.now();
+        localStorage.setItem(
+          entitlementKey(String(businessId)),
+          JSON.stringify({
+            plan: businessResult.data.plan,
+            status: businessResult.data.status,
+            verifiedAt: entitlementVerifiedAt,
+            lastSeenAt: entitlementVerifiedAt,
+          }),
+        );
         if (businessResult.data.status === "revoked") {
           setAuthMessage("Access to this NileStock business has been revoked.");
           await supabase.auth.signOut();
@@ -315,9 +422,10 @@ export function Entry() {
           };
         }
         lastUploadedSales.current = "";
+        offlineBaseline.current = "";
         setData(workspace);
         setRole(memberResult.data.role as "owner" | "manager" | "cashier");
-        setSession({
+        const cloudSession: Session = {
           email,
           name,
           founder:
@@ -329,7 +437,16 @@ export function Entry() {
           cloud: true,
           userId: user.id,
           businessId: String(businessId),
-        });
+          businessName: businessResult.data.name,
+          offlineRestricted: false,
+          lastVerifiedPlan: businessResult.data.plan as PlanId,
+          offlineLeaseExpiresAt:
+            businessResult.data.plan === "free"
+              ? undefined
+              : entitlementVerifiedAt + OFFLINE_PAID_LEASE_MS,
+        };
+        setSession(cloudSession);
+        localStorage.setItem("nilestock.session", JSON.stringify(cloudSession));
         localStorage.setItem("nilestock.cloud.businessId", String(businessId));
         hydratedUser.current = user.id;
         setCloudReady(true);
@@ -363,22 +480,49 @@ export function Entry() {
       )
         void hydrate(nextSession?.user || null);
     });
+    const reconnect = () => {
+      hydratedUser.current = null;
+      hydratingUser.current = null;
+      void supabase.auth.getSession().then(({ data: result }) =>
+        hydrate(result.session?.user || null),
+      );
+    };
+    addEventListener("online", reconnect);
     return () => {
       active = false;
+      removeEventListener("online", reconnect);
       subscription.unsubscribe();
     };
   }, [setData, setRole]);
   useEffect(() => {
+    if (!session?.offlineLeaseExpiresAt || session.lastVerifiedPlan === "free") return;
+    const delay = Math.max(0, session.offlineLeaseExpiresAt - Date.now() + 750);
+    const timer = window.setTimeout(() => window.location.reload(), delay);
+    return () => window.clearTimeout(timer);
+  }, [session?.lastVerifiedPlan, session?.offlineLeaseExpiresAt]);
+  useEffect(() => {
+    if (session?.businessId) {
+      const fingerprint = JSON.stringify(data);
+      const offline = !navigator.onLine;
+      if (!offline || fingerprint !== offlineBaseline.current) {
+        const backupData =
+          session.offlineRestricted && session.lastVerifiedPlan
+            ? { ...data, business: { ...data.business, plan: session.lastVerifiedPlan } }
+            : data;
+        saveWorkspaceBackup(session.businessId, backupData);
+        if (offline) offlineBaseline.current = fingerprint;
+      }
+    }
     const supabase = getSupabaseBrowserClient();
     if (
       !supabase ||
       !cloudReady ||
       !session?.cloud ||
       !session.businessId ||
-      !session.userId
+      !session.userId ||
+      !navigator.onLine
     )
       return;
-    saveWorkspaceBackup(session.businessId, data);
     const timeout = setTimeout(() => {
       const updatedAt = new Date().toISOString();
       void Promise.all([
@@ -715,6 +859,10 @@ export function Entry() {
   };
   const promptInstall = async () => {
     setMenu(false);
+    if (installedApp) {
+      setInstallHelp(true);
+      return;
+    }
     if (install) {
       await install.prompt();
       setInstall(null);
@@ -722,7 +870,19 @@ export function Entry() {
     }
     setInstallHelp(true);
   };
-  if (session === undefined) return null;
+  if (session === undefined)
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#f8faf9] px-6 text-[#13231c]">
+        <div className="text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#087c55] text-xl font-bold text-white shadow-[0_18px_45px_rgba(8,124,85,.25)]">
+            N
+          </span>
+          <b className="mt-4 block text-lg">Opening NileStock</b>
+          <p className="mt-1 text-sm text-[#62736b]">Preparing your secure retail workspace…</p>
+          <span className="mx-auto mt-4 block h-5 w-5 animate-spin rounded-full border-2 border-emerald-700 border-t-transparent" />
+        </div>
+      </div>
+    );
   if (session)
     return (
       <NileStockApp session={session} signOut={signOut} />
@@ -746,6 +906,34 @@ export function Entry() {
           ref={menuPanel}
           className={`${menu ? "flex" : "hidden"} absolute left-5 right-5 top-20 flex-col gap-2 rounded-2xl border bg-white p-4 shadow-xl md:static md:ml-auto md:flex md:flex-row md:items-center md:border-0 md:bg-transparent md:p-0 md:shadow-none`}
         >
+          <a
+            href="#features"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-[#52645b] hover:bg-black/5"
+            onClick={() => setMenu(false)}
+          >
+            Features
+          </a>
+          <a
+            href="#pricing"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-[#52645b] hover:bg-black/5"
+            onClick={() => setMenu(false)}
+          >
+            Pricing
+          </a>
+          <a
+            href="#faq"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-[#52645b] hover:bg-black/5"
+            onClick={() => setMenu(false)}
+          >
+            FAQ
+          </a>
+          <a
+            href="/blog"
+            className="rounded-lg px-3 py-2 text-sm font-semibold text-[#52645b] hover:bg-black/5"
+            onClick={() => setMenu(false)}
+          >
+            Blog
+          </a>
           <Button
             variant="ghost"
             onClick={() => {
@@ -763,8 +951,9 @@ export function Entry() {
           >
             Create account
           </Button>
-          <Button variant="secondary" onClick={promptInstall}>
-            <Download size={16} /> Install app
+          <Button variant="secondary" onClick={promptInstall} disabled={installedApp}>
+            {installedApp ? <Check size={16} /> : <Download size={16} />}
+            {installedApp ? "Installed" : "Install app"}
           </Button>
         </nav>
         <button
@@ -792,9 +981,10 @@ export function Entry() {
               </span>
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-[#56675f]">
-              NileStock turns your phone or laptop into a complete retail
-              operating system—fast POS, live stock, receipts, customer credit
-              and business reports in one premium workspace.
+              NileStock turns your phone, tablet or laptop into a complete
+              retail operating system—fast POS, live stock, receipts, customer
+              credit and business reports in one premium workspace. Start
+              without buying a dedicated POS machine.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button className="h-12 px-6" onClick={() => setAuth("signup")}>
@@ -814,7 +1004,7 @@ export function Entry() {
                 required
               </span>
               <span className="flex gap-2">
-                <Check size={15} className="text-emerald-600" /> Works offline
+                <Check size={15} className="text-emerald-600" /> Offline-ready after setup
               </span>
               <span className="flex gap-2">
                 <Check size={15} className="text-emerald-600" /> Installable PWA
@@ -916,16 +1106,54 @@ export function Entry() {
             ))}
           </div>
         </section>
+        <section className="mx-auto max-w-7xl px-5 py-10">
+          <div className="overflow-hidden rounded-[2rem] border border-[#dce5e0] bg-[#10271f] text-white shadow-[0_30px_90px_rgba(14,50,39,.18)]">
+            <div className="grid gap-0 lg:grid-cols-3">
+              {[
+                [
+                  "01",
+                  "Sell from the device you already own",
+                  "Use NileStock on Android, iPhone, tablet or computer. A dedicated POS machine is optional, not required to start.",
+                ],
+                [
+                  "02",
+                  "Keep selling through internet drops",
+                  "After the app has been opened and your account is set up, your local workspace remains usable offline. Pending work syncs automatically when the connection returns.",
+                ],
+                [
+                  "03",
+                  "Create and scan product codes",
+                  "Leave the barcode field blank and NileStock creates a product code plus QR value automatically. Scan with the phone camera or a compatible barcode scanner.",
+                ],
+              ].map(([number, title, copy], index) => (
+                <div
+                  key={title}
+                  className={`p-7 lg:p-8 ${index ? "border-t border-white/10 lg:border-l lg:border-t-0" : ""}`}
+                >
+                  <span className="text-xs font-bold tracking-[.18em] text-emerald-300">
+                    {number}
+                  </span>
+                  <h3 className="mt-4 text-xl font-semibold">{title}</h3>
+                  <p className="mt-3 text-sm leading-6 text-white/65">{copy}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <p className="mt-4 text-center text-xs text-[#62736b]">
+            NileStock subscriptions cover the software. Receipt printers, cash drawers, external scanners and complete POS hardware are optional and purchased separately.
+          </p>
+        </section>
         <section
           id="pricing"
           className="mx-auto max-w-7xl px-5 py-24 text-center"
         >
           <h2 className="text-4xl font-semibold">
-            Start simple. Upgrade when insight matters.
+            Start at zero. Upgrade only when the shop grows.
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-[#62736b]">
-            Transparent plans for a single shop. Start free, then unlock the
-            controls and intelligence your business needs.
+            Uganda-friendly software pricing for a single shop. Begin free,
+            move to Lite for only UGX 9,500, then unlock complete retail control
+            when your operation needs it.
           </p>
           <div className="mt-7 inline-flex rounded-xl border border-[#dce5e0] bg-white/80 p-1 shadow-sm">
             <button
@@ -946,47 +1174,47 @@ export function Entry() {
               [
                 "Free",
                 0,
-                "Try the essentials",
-                ["10 products", "Core POS and receipts", "Readable live reports"],
+                "Start without risk",
+                ["10 products", "Core POS and receipts", "Offline selling after setup"],
               ],
               [
-                "Starter",
-                25000,
-                "For a growing shop",
+                "Lite",
+                9500,
+                "For micro and small shops",
                 [
-                  "Unlimited products",
+                  "Up to 100 products",
                   "Barcode and QR downloads",
                   "WhatsApp receipts",
                 ],
               ],
               [
                 "Business",
-                50000,
+                49500,
                 "Complete retail control",
                 [
-                  "Branded PDF reports",
-                  "Staff and shifts",
-                  "Credit and suppliers",
+                  "Unlimited products",
+                  "Staff and cashier shifts",
+                  "Credit, suppliers and PDF reports",
                 ],
               ],
               [
                 "Pro",
-                100000,
+                99500,
                 "Intelligence at scale",
                 [
                   "Everything in Business",
                   "AI Business Adviser",
-                  "Branded PDF downloads",
+                  "Priority support and deeper insights",
                 ],
               ],
             ].map((x, i) => (
               <Card
-                className={`relative flex min-h-[430px] flex-col overflow-hidden p-7 ${i === 2 ? "border-emerald-500 shadow-[0_24px_60px_rgba(13,122,83,.17)]" : ""}`}
+                className={`relative flex min-h-[430px] flex-col overflow-hidden p-7 ${i === 1 ? "border-emerald-500 shadow-[0_24px_60px_rgba(13,122,83,.17)]" : ""}`}
                 key={String(x[0])}
               >
-                {i === 2 && (
+                {i === 1 && (
                   <span className="absolute right-0 top-0 rounded-bl-xl bg-emerald-700 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                    Most popular
+                    Best value
                   </span>
                 )}
                 <span className="text-xs font-bold uppercase tracking-[.14em] text-muted">
@@ -1022,7 +1250,7 @@ export function Entry() {
                 </ul>
                 <Button
                   className="mt-auto w-full"
-                  variant={i === 2 ? "primary" : "secondary"}
+                  variant={i === 1 ? "primary" : "secondary"}
                   onClick={() => setAuth("signup")}
                 >
                   {i === 0 ? "Start free" : "Choose plan"}
@@ -1031,14 +1259,61 @@ export function Entry() {
             ))}
           </div>
         </section>
+        <section id="faq" className="mx-auto max-w-5xl px-5 py-24">
+          <div className="text-center">
+            <p className="text-sm font-bold text-emerald-700">COMMON QUESTIONS</p>
+            <h2 className="mt-3 text-4xl font-semibold tracking-tight">Know exactly what you are buying.</h2>
+          </div>
+          <div className="mt-10 divide-y divide-[#dce5e0] overflow-hidden rounded-2xl border border-[#dce5e0] bg-white/80 shadow-sm backdrop-blur">
+            {[
+              [
+                "Can NileStock work on a phone?",
+                "Yes. NileStock is a responsive web app that works on supported Android and iPhone browsers, tablets and desktop computers, and it can be installed to the Home Screen as a PWA.",
+              ],
+              [
+                "Can I sell when the internet goes off?",
+                "Yes. After setup, NileStock keeps the local workspace available for selling and syncs pending changes automatically when connectivity returns. Paid plans can keep their paid features offline for up to 7 days after the last successful online subscription check; core selling and saved data remain available if that check expires.",
+              ],
+              [
+                "Does NileStock generate barcodes and QR codes?",
+                "Yes. If you leave a product code blank, NileStock creates one automatically and stores a matching QR value. Paid plans can download and print barcode or QR sheets.",
+              ],
+              [
+                "Do I need to buy a POS machine?",
+                "No. You can start with a phone, tablet or laptop. A receipt printer, cash drawer, barcode scanner or complete POS terminal is optional hardware and is not included in the software subscription.",
+              ],
+              [
+                "Can I use an existing product barcode?",
+                "Yes. Enter the barcode already printed on the product when creating or importing it, then scan that same code at checkout.",
+              ],
+              [
+                "What happens when I outgrow Lite?",
+                "Business removes the product cap and adds staff controls, cashier shifts, suppliers, customer credit, purchases and branded PDF reports. Pro adds the AI Business Adviser and deeper decision support.",
+              ],
+            ].map(([question, answer]) => (
+              <details key={question} className="group p-5 sm:p-6">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 font-semibold">
+                  {question}
+                  <span className="text-xl text-emerald-700 transition group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-3 max-w-3xl text-sm leading-6 text-[#62736b]">{answer}</p>
+              </details>
+            ))}
+          </div>
+        </section>
         <footer
           id="contact"
           className="border-t border-[#dce5e0] px-5 py-10 text-center text-sm text-[#62736b]"
         >
-          NileStock by Nile AI Solutions •{" "}
-          <a href="mailto:hello@nileai.solutions" className="text-emerald-700">
-            hello@nileai.solutions
-          </a>
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+            <span>NileStock by Nile AI Solutions • nilestock.shop</span>
+            <a href="/privacy" className="text-emerald-700">Privacy</a>
+            <a href="/terms" className="text-emerald-700">Terms</a>
+            <a href="/blog" className="text-emerald-700">Blog</a>
+            <a href="mailto:hello@nileai.solutions" className="text-emerald-700">
+              hello@nileai.solutions
+            </a>
+          </div>
         </footer>
       </main>
       <Modal
@@ -1224,12 +1499,19 @@ export function Entry() {
       >
         <div className="space-y-3 text-sm">
           <p>
-            If your browser does not show an automatic install prompt, use its
-            menu and choose <b>Install app</b> or <b>Add to Home Screen</b>.
+            {installedApp
+              ? "NileStock is already running as an installed app on this device."
+              : "If your browser does not show an automatic install prompt, use the browser menu and choose Install app or Add to Home Screen."}
+          </p>
+          <p className="rounded-xl bg-sky-50 p-4 text-sky-950">
+            On Windows with Chrome, Edge or Brave: look for the install icon in
+            the address bar or open the browser menu and choose <b>Install NileStock</b>.
+            If the option is missing, the PWA may already be installed or the browser
+            has not offered installation for that page yet.
           </p>
           <p className="rounded-xl bg-emerald-50 p-4 text-emerald-950">
             On iPhone: open NileStock in Safari, tap <b>Share</b>, then tap
-            <b> Add to Home Screen</b>.
+            <b>Add to Home Screen</b>.
           </p>
           <Button className="w-full" onClick={() => setInstallHelp(false)}>
             Got it

@@ -160,7 +160,7 @@ export function CodeCatalogue({
           </span>
           <div className="min-w-0 flex-1">
             <b className="flex items-center gap-2">
-              Code downloads are a Starter feature
+              Code downloads are a Lite feature
               <span className="text-[10px] font-bold text-red-600">STARTER</span>
             </b>
             <p className="mt-1 text-xs text-muted">
@@ -169,7 +169,7 @@ export function CodeCatalogue({
             </p>
           </div>
           <Button onClick={openBilling}>
-            <Sparkles size={15} /> Upgrade to Starter
+            <Sparkles size={15} /> Upgrade to Lite
           </Button>
         </div>
       )}
@@ -219,7 +219,7 @@ export function CodeCatalogue({
           {!canExport && <Lock size={14} />}
           {canExport
             ? labelFor("catalogue", "Download selected PDF")
-            : "Starter • Download PDF"}
+            : "Lite • Download PDF"}
         </Button>
         <Button
           variant="secondary"
@@ -227,14 +227,14 @@ export function CodeCatalogue({
           disabled={!selected.length}
         >
           {!canExport && <Lock size={14} />}
-          {canExport ? "Share to WhatsApp" : "Starter • Share codes"}
+          {canExport ? "Share to WhatsApp" : "Lite • Share codes"}
         </Button>
         <Button
           variant="secondary"
           onClick={() => (canExport ? window.print() : openBilling())}
         >
           {!canExport && <Lock size={14} />}
-          {canExport ? "Print labels" : "Starter • Print labels"}
+          {canExport ? "Print labels" : "Lite • Print labels"}
         </Button>
       </div>
       <div className="code-print grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

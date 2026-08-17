@@ -1,6 +1,6 @@
 {
   "name": "nilestock",
-  "version": "10.2.7",
+  "version": "10.3.1",
   "private": true,
   "scripts": {
     "dev": "next dev",

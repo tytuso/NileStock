@@ -36,10 +36,12 @@ import {
   Upload,
   Users,
   WalletCards,
+  WifiOff,
   X,
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import {
+  type AppData,
   Contact,
   PaymentMethod,
   Product,
@@ -90,6 +92,7 @@ import {
   PLAN_ORDER,
   hasMinimumPlan,
   isProPlan,
+  productLimit,
   receiptHistoryLimit,
 } from "@/lib/plans";
 import {
@@ -156,6 +159,19 @@ const validPages = new Set<Page>([
   ...nav.map(([page]) => page),
   "Import Products",
 ]);
+const businessOnlyPages = new Set<Page>([
+  "PDF Reports",
+  "Staff",
+  "Audit Log",
+  "Purchases",
+  "Suppliers",
+  "Customers",
+]);
+function pageIsLocked(page: Page, plan: AppData["business"]["plan"]) {
+  if (page === "AI Adviser") return !isProPlan(plan);
+  if (businessOnlyPages.has(page)) return !hasMinimumPlan(plan, "business");
+  return false;
+}
 export function NileStockApp({
   session,
   signOut,
@@ -166,6 +182,9 @@ export function NileStockApp({
     founder: boolean;
     businessId?: string;
     cloud?: boolean;
+    offlineRestricted?: boolean;
+    lastVerifiedPlan?: AppData["business"]["plan"];
+    offlineLeaseExpiresAt?: number;
   };
   signOut: () => void;
 }) {
@@ -175,8 +194,8 @@ export function NileStockApp({
     [mobile, setMobile] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [search, setSearch] = useState(false),
-    [installPrompt, setInstallPrompt] = useState<any>(null),
-    [refreshing, setRefreshing] = useState(false);
+    [refreshing, setRefreshing] = useState(false),
+    [installPrompt, setInstallPrompt] = useState<any>(null);
   const pageKey = `nilestock.active-page.${session.email.toLowerCase()}`;
   const initials = session.name
     .split(/\s+/)
@@ -191,9 +210,9 @@ export function NileStockApp({
       validPages.has(stored) &&
       (stored !== "Founder" || session.founder)
     )
-      setPage(stored);
+      setPage(pageIsLocked(stored, data.business.plan) ? "Billing" : stored);
     setPageReady(true);
-  }, [pageKey, session.founder]);
+  }, [data.business.plan, pageKey, session.founder]);
   useEffect(() => {
     if (pageReady) localStorage.setItem(pageKey, page);
   }, [page, pageKey, pageReady]);
@@ -266,18 +285,14 @@ export function NileStockApp({
           {nav
             .filter(([n]) => n !== "Founder" || session.founder)
             .map(([n, I]) => {
-              const aiLocked =
-                n === "AI Adviser" && !isProPlan(data.business.plan);
-              const reportLocked =
-                n === "PDF Reports" &&
-                !hasMinimumPlan(data.business.plan, "business");
-              const locked = aiLocked || reportLocked;
+              const locked = pageIsLocked(n, data.business.plan);
+              const aiLocked = n === "AI Adviser" && locked;
               return (
                 <button
                   key={n}
                   title={n}
                   onClick={() => {
-                    setPage(n);
+                    setPage(locked ? "Billing" : n);
                     setMobile(false);
                   }}
                   className={`focusable mb-1 flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-medium ${page === n ? "bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200" : "text-muted hover:bg-black/5 dark:hover:bg-white/5"}`}
@@ -347,15 +362,10 @@ export function NileStockApp({
               title="Refresh app"
               onClick={() => {
                 setRefreshing(true);
-                window.setTimeout(() => {
-                  window.location.reload();
-                }, 150);
+                window.setTimeout(() => window.location.reload(), 150);
               }}
             >
-              <RefreshCw
-                size={18}
-                className={refreshing ? "animate-spin" : ""}
-              />
+              <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
             </Button>
             <Button
               variant="ghost"
@@ -405,6 +415,17 @@ export function NileStockApp({
             </Button>
           </div>
         </header>
+        {session.offlineRestricted && (
+          <div className="flex items-start gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900 dark:bg-amber-950/50 dark:text-amber-100 lg:px-7">
+            <WifiOff size={18} className="mt-0.5 shrink-0" />
+            <div>
+              <b>Offline subscription check required.</b>{" "}
+              Core selling and your saved data remain available, but paid features
+              are temporarily using Free access until this device reconnects and
+              confirms the subscription. Nothing is deleted.
+            </div>
+          </div>
+        )}
         <main className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_18%_6%,rgba(65,205,148,.10),transparent_28%),radial-gradient(circle_at_88%_8%,rgba(104,165,240,.12),transparent_30%)] p-4 lg:p-7">
           {page === "Overview" && <Overview go={setPage} />}{" "}
           {page === "Sale" && (
@@ -425,12 +446,12 @@ export function NileStockApp({
             <AiAdviser openBilling={() => setPage("Billing")} />
           )}
           {page === "Inventory" && <Inventory />}
-          {page === "Sales" && <Sales />}
+          {page === "Sales" && <Sales go={setPage} />}
           {page === "Receipts" && <Receipts />}
           {page === "Purchases" && <Purchases />}
           {page === "Suppliers" && <Contacts kind="supplier" />}
           {page === "Customers" && <Contacts kind="customer" />}
-          {page === "Customer Requests" && <CustomerRequests />}
+          {page === "Customer Requests" && <CustomerRequests go={setPage} />}
           {page === "Expenses" && <Expenses />}
           {page === "Reports" && <Reports go={setPage} />}
           {page === "PDF Reports" && <PdfReports go={setPage} />}
@@ -613,8 +634,12 @@ function Products({ go }: { go: (p: Page) => void }) {
   const [open, setOpen] = useState(false),
     [q, setQ] = useState(""),
     [limitOpen, setLimitOpen] = useState(false);
+  const limit = productLimit(data.business.plan);
+  const atLimit = limit !== null && data.products.length >= limit;
+  const nextPlanId = data.business.plan === "free" ? "starter" : "business";
+  const nextPlan = PLAN_DEFINITIONS[nextPlanId];
   const save = (fd: FormData) => {
-    if (data.business.plan === "free" && data.products.length >= 10) {
+    if (atLimit) {
       setOpen(false);
       setLimitOpen(true);
       return;
@@ -648,7 +673,12 @@ function Products({ go }: { go: (p: Page) => void }) {
       value.toLowerCase().includes(q.trim().toLowerCase()),
     ),
   );
+  const canExportProducts = hasMinimumPlan(data.business.plan, "business");
   const exportProducts = () => {
+    if (!canExportProducts) {
+      go("Billing");
+      return;
+    }
     download(
       `${fileSafeName(data.business.name)}-products-${new Date().toISOString().slice(0, 10)}.csv`,
       `\uFEFF${csv(
@@ -679,11 +709,7 @@ function Products({ go }: { go: (p: Page) => void }) {
           onChange={(e) => setQ(e.target.value)}
         />
         <Button
-          onClick={() =>
-            data.business.plan === "free" && data.products.length >= 10
-              ? setLimitOpen(true)
-              : setOpen(true)
-          }
+          onClick={() => (atLimit ? setLimitOpen(true) : setOpen(true))}
         >
           <Plus size={16} /> Add product
         </Button>
@@ -696,7 +722,8 @@ function Products({ go }: { go: (p: Page) => void }) {
           disabled={!data.products.length}
           aria-live="polite"
         >
-          <Download size={16} /> {labelFor("products", "Export CSV")}
+          {!canExportProducts && <Lock size={14} />}
+          <Download size={16} /> {canExportProducts ? labelFor("products", "Export CSV") : "Business • Export CSV"}
         </Button>
       </div>
       <Card className="overflow-x-auto">
@@ -833,19 +860,18 @@ function Products({ go }: { go: (p: Page) => void }) {
       <Modal
         open={limitOpen}
         onClose={() => setLimitOpen(false)}
-        title="Free product limit reached"
+        title={`${PLAN_DEFINITIONS[data.business.plan].name} product limit reached`}
       >
         <div className="text-center">
           <Lock className="mx-auto text-emerald-700" />
           <h3 className="mt-3 text-xl font-semibold">
-            You have used all 10 free products
+            You have used all {limit ?? 0} products on this plan
           </h3>
           <p className="mt-2 text-sm text-muted">
-            Upgrade to Starter for unlimited products and continue growing your
-            shop catalogue.
+            Upgrade to {nextPlan.name} for {nextPlanId === "business" ? "unlimited products and full retail control" : "up to 100 products, code downloads and WhatsApp receipts"}.
           </p>
           <Button className="mt-5" onClick={() => go("Billing")}>
-            Upgrade for UGX 25,000/month
+            Upgrade to {nextPlan.name} • {money(nextPlan.price)}/month
           </Button>
         </div>
       </Modal>
@@ -855,6 +881,8 @@ function Products({ go }: { go: (p: Page) => void }) {
 function ImportProducts({ go }: { go: (p: Page) => void }) {
   const { data, addProduct } = useApp();
   const { markDownloaded, labelFor } = useDownloadFeedback();
+  const limit = productLimit(data.business.plan);
+  const remaining = limit === null ? null : Math.max(0, limit - data.products.length);
   const [rows, setRows] = useState<Record<string, string>[]>([]),
     [error, setError] = useState(""),
     [dragging, setDragging] = useState(false);
@@ -897,10 +925,7 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
     setRows(valid);
   };
   const commit = () => {
-    const capacity =
-      data.business.plan === "free"
-        ? Math.max(0, 10 - data.products.length)
-        : rows.length;
+    const capacity = remaining === null ? rows.length : remaining;
     rows.slice(0, capacity).forEach((r, i) => {
       const code =
         r.barcode ||
@@ -1036,14 +1061,10 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
             </div>
             <Button
               onClick={commit}
-              disabled={
-                data.business.plan === "free" && data.products.length >= 10
-              }
+              disabled={remaining === 0}
             >
               Import{" "}
-              {data.business.plan === "free"
-                ? Math.min(rows.length, 10 - data.products.length)
-                : rows.length}{" "}
+              {remaining === null ? rows.length : Math.min(rows.length, remaining)}{" "}
               products
             </Button>
           </div>
@@ -1071,13 +1092,11 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
               </tbody>
             </table>
           </div>
-          {data.business.plan === "free" &&
-            rows.length > 10 - data.products.length && (
-              <p className="border-t border-line bg-amber-50 p-3 text-xs text-amber-800">
-                Free accounts can hold 10 products. Only the remaining available
-                slots will import.
-              </p>
-            )}
+          {remaining !== null && rows.length > remaining && (
+            <p className="border-t border-line bg-amber-50 p-3 text-xs text-amber-800">
+              {PLAN_DEFINITIONS[data.business.plan].name} accounts can hold {limit} products. Only the remaining {remaining} available slot{remaining === 1 ? "" : "s"} will import.
+            </p>
+          )}
         </Card>
       )}
     </div>
@@ -1429,8 +1448,9 @@ function Inventory() {
     </div>
   );
 }
-function Sales() {
+function Sales({ go }: { go: (p: Page) => void }) {
   const { data, setData, role } = useApp();
+  const canExport = hasMinimumPlan(data.business.plan, "business");
   const { markDownloaded, labelFor } = useDownloadFeedback();
   const [selected, setSelected] = useState<Sale | null>(null),
     [from, setFrom] = useState(""),
@@ -1440,6 +1460,10 @@ function Sales() {
     return (!from || date >= from) && (!to || date <= to);
   });
   const downloadSalesPdf = () => {
+    if (!canExport) {
+      go("Billing");
+      return;
+    }
     const total = filtered.reduce((sum, sale) => sum + sale.total, 0);
     const itemCount = filtered.reduce(
       (sum, sale) =>
@@ -1495,12 +1519,17 @@ function Sales() {
           onClick={downloadSalesPdf}
           aria-live="polite"
         >
-          <FileText size={16} /> {labelFor("sales-pdf", "Download PDF")}
+          {!canExport && <Lock size={14} />}
+          <FileText size={16} /> {canExport ? labelFor("sales-pdf", "Download PDF") : "Business • PDF"}
         </Button>
         <Button
           className="self-end"
           variant="secondary"
           onClick={() => {
+            if (!canExport) {
+              go("Billing");
+              return;
+            }
             download(
               `${fileSafeName(data.business.name)}-sales.csv`,
               csv(
@@ -1521,7 +1550,8 @@ function Sales() {
           }}
           aria-live="polite"
         >
-          {labelFor("sales-csv", "Export CSV")}
+          {!canExport && <Lock size={14} />}
+          {canExport ? labelFor("sales-csv", "Export CSV") : "Business • CSV"}
         </Button>
       </div>
       <Card className="overflow-x-auto">
@@ -2198,6 +2228,10 @@ function Reports({ go }: { go: (p: Page) => void }) {
         <Button
           variant="secondary"
           onClick={() => {
+            if (!hasMinimumPlan(data.business.plan, "business")) {
+              go("Billing");
+              return;
+            }
             download(
               `${fileSafeName(data.business.name)}-business-report.csv`,
               csv(
@@ -2215,7 +2249,10 @@ function Reports({ go }: { go: (p: Page) => void }) {
           }}
           aria-live="polite"
         >
-          {labelFor("business-report-csv", "Export report CSV")}
+          {!hasMinimumPlan(data.business.plan, "business") && <Lock size={14} />}
+          {hasMinimumPlan(data.business.plan, "business")
+            ? labelFor("business-report-csv", "Export report CSV")
+            : "Business • Export CSV"}
         </Button>
       </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -2627,6 +2664,9 @@ function SettingsView() {
                 <option>80mm</option>
                 <option>A4</option>
               </Select>
+              <span className="text-xs font-normal text-muted">
+                Changes the receipt preview, downloaded PDF and print width.
+              </span>
             </Field>
             <Field label="Appearance">
               <Select name="theme" defaultValue={data.business.theme}>
@@ -2728,12 +2768,17 @@ function GlobalSearch({
   );
 }
 
-function CustomerRequests() {
+function CustomerRequests({ go }: { go: (p: Page) => void }) {
   const { data, setData } = useApp();
+  const canExport = hasMinimumPlan(data.business.plan, "business");
   const { markDownloaded, labelFor } = useDownloadFeedback();
   const [open, setOpen] = useState(false);
   const requests = data.requests || [];
   const exportPdf = () => {
+    if (!canExport) {
+      go("Billing");
+      return;
+    }
     const openRequests = requests.filter((request) => request.status === "open");
     const requestedUnits = requests.reduce(
       (sum, request) => sum + request.quantity,
@@ -2775,7 +2820,8 @@ function CustomerRequests() {
           disabled={!requests.length}
           aria-live="polite"
         >
-          {labelFor("customer-requests", "Download PDF")}
+          {!canExport && <Lock size={14} />}
+          {canExport ? labelFor("customer-requests", "Download PDF") : "Business • PDF"}
         </Button>
         <Button onClick={() => setOpen(true)}>
           <Plus size={16} /> Record request
@@ -3292,7 +3338,7 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Codes",
-      "Generate and preview product barcodes and QR codes. Starter and higher plans can print, download or share code sheets.",
+      "Generate and preview product barcodes and QR codes. Lite and higher plans can print, download or share code sheets.",
     ],
     [
       "AI Adviser",
@@ -3340,7 +3386,7 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Billing",
-      "Compare Free, Starter, Business and Pro, choose monthly or annual billing and request plan activation.",
+      "Compare Free, Lite, Business and Pro, choose monthly or annual billing and request plan activation.",
     ],
     [
       "Purchases",

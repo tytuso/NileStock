@@ -1,0 +1,13 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { BLOG_POSTS } from "@/lib/blog";
+
+export const metadata: Metadata = { title: "Retail & POS Guides for Uganda", description: "Practical NileStock guides about POS systems, offline selling, inventory, barcodes, minimarts and supermarket operations in Uganda.", alternates: { canonical: "/blog" }, openGraph: { title: "NileStock Retail Guides", description: "Practical POS and inventory guides for Ugandan and African retailers.", url: "https://nilestock.shop/blog", type: "website" } };
+
+export default function BlogPage() { return (
+<main className="min-h-screen bg-[#f7faf8] text-[#13231c]">
+<header className="border-b border-[#dfe8e3] bg-white/90"><div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-5"><Link href="/" className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#087c55] font-bold text-white">N</span><span><b className="block">NileStock</b><small className="text-[#62736b]">Retail guides</small></span></Link><Link href="/#pricing" className="rounded-xl bg-[#087c55] px-4 py-2 text-sm font-semibold text-white">View pricing</Link></div></header>
+<section className="mx-auto max-w-6xl px-5 py-16"><span className="text-xs font-bold uppercase tracking-[.18em] text-emerald-700">NileStock knowledge centre</span><h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-[-.035em] md:text-6xl">Practical retail technology for African shops.</h1><p className="mt-5 max-w-2xl text-lg leading-8 text-[#62736b]">Learn how to choose POS software, sell during internet outages, organize barcodes, control stock and prepare a growing retail business for more cashiers and branches.</p>
+<div className="mt-10 grid gap-5 md:grid-cols-2">{BLOG_POSTS.map((post)=><article key={post.slug} className="rounded-3xl border border-[#dfe8e3] bg-white p-6 shadow-[0_18px_50px_rgba(21,74,53,.06)]"><div className="flex items-center justify-between gap-3 text-xs text-[#718078]"><span>{post.readingTime}</span><time dateTime={post.published}>{new Date(post.published).toLocaleDateString("en-UG",{dateStyle:"medium"})}</time></div><h2 className="mt-4 text-2xl font-semibold leading-tight">{post.title}</h2><p className="mt-3 text-sm leading-6 text-[#62736b]">{post.description}</p><Link className="mt-6 inline-flex font-semibold text-emerald-700" href={`/blog/${post.slug}`}>Read guide →</Link></article>)}</div></section>
+<footer className="border-t border-[#dfe8e3] px-5 py-8 text-center text-sm text-[#62736b]">NileStock by Nile AI Solutions • <Link className="text-emerald-700" href="/">nilestock.shop</Link></footer>
+</main> ); }

@@ -1,4 +1,16 @@
-# NileStock v10.2.7
+# NileStock v10.3.1 — nilestock.shop premium release
+
+## v10.3.1 launch package
+
+- Prepared for the new primary domain **https://nilestock.shop** with canonical metadata, Open Graph/Twitter sharing, sitemap, robots rules, structured data, privacy/terms pages and a branded social preview image.
+- New Uganda-friendly pricing: **Free UGX 0**, **Lite UGX 9,500/month**, **Business UGX 49,500/month**, **Pro UGX 99,500/month**. Annual billing keeps the existing two-month-free model.
+- The internal `starter` plan ID is retained for database compatibility but is presented to customers as **Lite**. No pricing migration is required.
+- Free supports up to 10 products; Lite supports up to 100; Business and Pro have no product cap. Code downloads remain Lite+, business operations/PDF exports remain Business+, and AI remains Pro-only.
+- Improved offline-first behavior: signed-in cloud workspaces keep a business-specific local backup while offline and rehydrate/sync automatically when connectivity returns. First account setup still requires internet.
+- Safer PWA caching with versioned shell/static caches, automatic service-worker activation, cached Next.js static assets and a branded loading state instead of a blank screen.
+- Landing page now explains phone/tablet/desktop use, optional POS hardware, automatic barcode/QR creation, offline operation and plan differences in SEO-readable copy.
+- Added 192px, 512px and Apple touch icons plus a 1200×630 social image.
+
 
 ## v10.2.7 premium receipts
 
@@ -85,7 +97,7 @@ The **Preview workspace** button remains local-only for safe evaluation. Real em
 1. NileStock currently uses the existing **Nile Core** Supabase project shared with Zabuni.
 2. Apply the shared-project migrations in filename order, including `20260811143000_nilestock_cross_device_sales.sql`. All objects use a `nilestock_` prefix.
 3. In **Authentication → Providers → Google**, keep Google enabled as it is for Zabuni.
-4. In **Authentication → URL Configuration**, add `http://localhost:3000/**`, `https://nilestock.vercel.app/**`, and the final NileStock domain to Redirect URLs.
+4. In **Authentication → URL Configuration**, add `http://localhost:3000/**`, `https://nilestock.vercel.app/**`, and `https://nilestock.shop/**` to Redirect URLs.
 5. If moving NileStock to another project, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in `.env.local` and Vercel.
 6. Never expose the service-role key to the browser.
 
@@ -127,12 +139,12 @@ See [DEPLOYMENT.md](DEPLOYMENT.md). The application works without external image
 
 ## Plans and feature rules
 
-- **Free — UGX 0:** Up to 10 products, core POS/receipts and readable live reports.
-- **Starter — UGX 25,000/month:** Unlimited products, barcode/QR downloads, customer requests and WhatsApp receipts.
-- **Business — UGX 50,000/month:** Staff/shifts, suppliers, customer credit, purchases, CSV exports and branded PDF reports.
-- **Pro — UGX 100,000/month:** Everything in Business plus the AI Business Adviser, business evaluation, product opportunities and strategic insights.
+- **Free — UGX 0:** Up to 10 products, core POS/receipts, offline-ready selling after setup and readable live reports.
+- **Lite — UGX 9,500/month:** Up to 100 products, barcode/QR downloads, customer requests, WhatsApp receipts and automatic reconnection sync. Internally this continues to use the database plan ID `starter`.
+- **Business — UGX 49,500/month:** Unlimited products, staff/shifts, suppliers, customer credit, purchases, CSV exports and branded PDF reports.
+- **Pro — UGX 99,500/month:** Everything in Business plus the AI Business Adviser, business evaluation, product opportunities, priority support and strategic insights.
 
-Starter/Business/Pro access is approved from the private Founder page after a billing request is verified.
+Lite/Business/Pro access is approved from the private Founder page after a billing request is verified.
 
 The dashboard includes a responsive **Billing** centre with monthly/annual pricing, two-month annual savings, current-plan status, feature comparison and structured Mobile Money, bank or card activation requests. The database migration includes `subscriptions` and `billing_requests` tables ready for a future Pesapal/payment-webhook integration. Until payment credentials are configured, upgrade requests are handed to NileStock support for confirmation instead of pretending an unverified payment succeeded.
 

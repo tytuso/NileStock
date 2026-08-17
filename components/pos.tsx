@@ -19,6 +19,7 @@ import { useApp } from "@/lib/store";
 import { CartItem, PaymentMethod, Sale } from "@/lib/types";
 import { money, totals } from "@/lib/utils";
 import { findProductByCode } from "@/lib/product-codes";
+import { hasMinimumPlan } from "@/lib/plans";
 import { resolveCashierName } from "@/lib/cashier";
 import {
   disableNegotiatedPrice,
@@ -29,6 +30,7 @@ import {
 import {
   describeCameraIssue,
   isAppleMobileDevice,
+  requestCameraAccess,
 } from "@/lib/camera-permission";
 import type { CameraIssue } from "@/lib/camera-permission";
 import { Button, Card, Field, Input, Modal, Select } from "./ui";
@@ -80,6 +82,7 @@ export function POS({
 }) {
   const { data, setData, completeSale } = useApp();
   const signedInCashier = resolveCashierName(signedInName, signedInEmail);
+  const canUseCustomerCredit = hasMinimumPlan(data.business.plan, "business");
   const [cart, setCart] = useState<CartItem[]>([]),
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
@@ -518,13 +521,19 @@ export function POS({
                 "Mobile Money",
                 "Card",
                 "Bank",
-                "Customer Credit",
+                ...(canUseCustomerCredit ? ["Customer Credit"] : []),
                 "Other",
               ].map((x) => (
                 <option key={x}>{x}</option>
               ))}
             </Select>
           </Field>
+          {!canUseCustomerCredit && (
+            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-900">
+              Customer Credit is a Business feature. Cash, Mobile Money, Card and
+              Bank payments remain available.
+            </p>
+          )}
           {payment === "Cash" && (
             <>
               <Field label="Cash received">
@@ -631,15 +640,21 @@ function Scanner({
     setCameraIssue(issue);
     setCameraState(issue.kind === "denied" ? "blocked" : "unavailable");
   }, []);
-  const retryCamera = useCallback(() => {
+  const retryCamera = useCallback(async () => {
     setRequestingCamera(true);
     setCameraState("starting");
     setCameraIssue(null);
     setError("");
-    localStorage.removeItem(CAMERA_KEY);
-    setRetryVersion((version) => version + 1);
-    window.setTimeout(() => setRequestingCamera(false), 250);
-  }, []);
+    try {
+      await requestCameraAccess(navigator.mediaDevices);
+      localStorage.removeItem(CAMERA_KEY);
+      setRetryVersion((version) => version + 1);
+    } catch (cause) {
+      showCameraIssue(cause);
+    } finally {
+      setRequestingCamera(false);
+    }
+  }, [showCameraIssue]);
   const submit = (raw: string) => {
     const code = raw.trim();
     if (!code) {
@@ -676,35 +691,17 @@ function Scanner({
     (async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
-        const appleMobile = isAppleMobileDevice(
-          navigator.userAgent,
-          navigator.platform,
-          navigator.maxTouchPoints,
-        );
-
-        if (appleMobile) localStorage.removeItem(CAMERA_KEY);
-
-        const remembered = appleMobile
-          ? null
-          : localStorage.getItem(CAMERA_KEY);
-
-        const cameras =
-          appleMobile || remembered ? [] : await Html5Qrcode.getCameras();
-
+        const remembered = localStorage.getItem(CAMERA_KEY);
+        const cameras = remembered ? [] : await Html5Qrcode.getCameras();
         const selected = cameras.length
           ? cameras.find((camera) =>
               /back|rear|environment/i.test(camera.label),
             ) || cameras.at(-1)
           : undefined;
-
-        if (selected && !appleMobile)
-          localStorage.setItem(CAMERA_KEY, selected.id);
-
+        if (selected) localStorage.setItem(CAMERA_KEY, selected.id);
         scanner = new Html5Qrcode(id);
         await scanner.start(
-          appleMobile
-            ? { facingMode: "environment" }
-            : remembered || selected?.id || { facingMode: "environment" },
+          remembered || selected?.id || { facingMode: "environment" },
           { fps: 15, qrbox: { width: 250, height: 160 } },
           (code: string) => {
             if (accepted || stopped) return;
@@ -718,17 +715,8 @@ function Scanner({
           },
           () => {},
         );
-        if (stopped) {
-          await scanner.stop().catch(() => {});
-        } else {
-          const video = document.getElementById(id)?.querySelector("video");
-          if (video) {
-            video.playsInline = true;
-            video.muted = true;
-            void video.play().catch(() => {});
-          }
-          setCameraState("active");
-        }
+        if (stopped) await scanner.stop().catch(() => {});
+        else setCameraState("active");
       } catch (cause) {
         if (stopped) return;
         showCameraIssue(cause);
@@ -848,8 +836,8 @@ function Scanner({
       </div>
       <p id="scanner-manual-help" className="mt-2 text-xs text-muted">
         Camera video stays on this device and is used only to read product
-        codes. NileStock prefers the rear camera automatically. If the code is
-        not recognised, add it to the product first.
+        codes. NileStock remembers the camera you approved on this phone. If
+        the code is not recognised, add it to the product first.
       </p>
     </Modal>
   );
