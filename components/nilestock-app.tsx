@@ -39,7 +39,6 @@ import {
 } from "lucide-react";
 import { useApp } from "@/lib/store";
 import {
-  Business,
   Contact,
   PaymentMethod,
   Product,
@@ -84,7 +83,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { jsPDF } from "jspdf";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import {
   PLAN_DEFINITIONS,
@@ -97,7 +95,9 @@ import {
   REPORT_KINDS,
   buildReportSnapshot,
   type ReportKind,
+  type ReportSnapshot,
 } from "@/lib/reports";
+import { createBrandedReportPdf } from "@/lib/report-pdf";
 import { AiAdviser } from "./ai-adviser";
 import { FounderControl } from "./founder-control";
 import { PlanView } from "./plan-view";
@@ -1420,40 +1420,35 @@ function Sales() {
     return (!from || date >= from) && (!to || date <= to);
   });
   const downloadSalesPdf = () => {
-    const pdf = brandedPdf(data.business, "Sales Report");
-    pdf.setFontSize(9);
-    pdf.setTextColor(100, 115, 107);
-    pdf.text(`Period: ${from || "All dates"} to ${to || "Today"}`, 16, 48);
-    pdf.setTextColor(20, 37, 30);
-    let y = 60;
-    filtered.forEach((s, i) => {
-      pdf.text(`${i + 1}. ${s.receiptNo}`, 16, y);
-      pdf.text(new Date(s.createdAt).toLocaleString(), 55, y);
-      pdf.text(s.payment, 125, y);
-      pdf.text(money(s.total, data.business.currency), 194, y, {
-        align: "right",
-      });
-      y += 8;
-      if (y > 278) {
-        pdf.addPage();
-        y = 20;
-      }
-    });
-    pdf.setFillColor(236, 249, 243);
-    pdf.roundedRect(14, y + 4, 182, 18, 3, 3, "F");
-    pdf.setFontSize(12);
-    pdf.setTextColor(8, 124, 85);
-    pdf.text("Total sales", 20, y + 15);
-    pdf.text(
-      money(
-        filtered.reduce((a, s) => a + s.total, 0),
-        data.business.currency,
-      ),
-      190,
-      y + 15,
-      { align: "right" },
+    const total = filtered.reduce((sum, sale) => sum + sale.total, 0);
+    const itemCount = filtered.reduce(
+      (sum, sale) =>
+        sum + sale.items.reduce((items, item) => items + item.qty, 0),
+      0,
     );
-    finalizePdf(pdf, data.business);
+    const completed = filtered.filter((sale) => sale.status === "completed");
+    const snapshot: ReportSnapshot = {
+      title: "Sales report",
+      period: `${from || "All dates"} to ${to || "Today"}`,
+      insight: filtered.length
+        ? `${filtered.length} transaction${filtered.length === 1 ? "" : "s"} are included in this report, with a recorded value of ${money(total, data.business.currency)}.`
+        : "No sales match the selected date range.",
+      metrics: [
+        {
+          label: "Recorded value",
+          value: money(total, data.business.currency),
+        },
+        { label: "Transactions", value: String(filtered.length) },
+        { label: "Items sold", value: String(itemCount) },
+        { label: "Completed", value: String(completed.length) },
+      ],
+      rows: filtered.map((sale) => ({
+        label: sale.receiptNo,
+        detail: `${new Date(sale.createdAt).toLocaleString()} • ${sale.payment} • ${sale.status}`,
+        value: money(sale.total, data.business.currency),
+      })),
+    };
+    const pdf = createBrandedReportPdf(data.business, snapshot);
     pdf.save(`${fileSafeName(data.business.name)}-sales-report.pdf`);
     markDownloaded("sales-pdf");
   };
@@ -2719,26 +2714,35 @@ function CustomerRequests() {
   const [open, setOpen] = useState(false);
   const requests = data.requests || [];
   const exportPdf = () => {
-    const pdf = brandedPdf(data.business, "Customer Product Requests");
-    let y = 56;
-    requests.forEach((r, index) => {
-      pdf.setFontSize(11);
-      pdf.setTextColor(20, 37, 30);
-      pdf.text(`${index + 1}. ${r.product} × ${r.quantity}`, 16, y);
-      pdf.setFontSize(9);
-      pdf.setTextColor(100, 115, 107);
-      pdf.text(
-        `${r.customer || "Walk-in"} • ${r.status} • ${day(r.createdAt)}`,
-        20,
-        y + 5,
-      );
-      y += 14;
-      if (y > 275) {
-        pdf.addPage();
-        y = 20;
-      }
-    });
-    finalizePdf(pdf, data.business);
+    const openRequests = requests.filter((request) => request.status === "open");
+    const requestedUnits = requests.reduce(
+      (sum, request) => sum + request.quantity,
+      0,
+    );
+    const snapshot: ReportSnapshot = {
+      title: "Customer product requests",
+      period: "Current request book",
+      insight: requests.length
+        ? `${requests.length} customer request${requests.length === 1 ? " is" : "s are"} recorded, including ${openRequests.length} still open.`
+        : "No customer product requests have been recorded yet.",
+      metrics: [
+        { label: "Total requests", value: String(requests.length) },
+        { label: "Open requests", value: String(openRequests.length) },
+        { label: "Requested units", value: String(requestedUnits) },
+        {
+          label: "Sourced",
+          value: String(
+            requests.filter((request) => request.status === "sourced").length,
+          ),
+        },
+      ],
+      rows: requests.map((request) => ({
+        label: request.product,
+        detail: `${request.customer || "Walk-in"} • ${request.status} • ${day(request.createdAt)}`,
+        value: `${request.quantity} units`,
+      })),
+    };
+    const pdf = createBrandedReportPdf(data.business, snapshot);
     pdf.save(`${fileSafeName(data.business.name)}-customer-requests.pdf`);
     markDownloaded("customer-requests");
   };
@@ -2863,68 +2867,6 @@ function CustomerRequests() {
   );
 }
 
-function brandedPdf(business: Business, title: string) {
-  const pdf = new jsPDF();
-  pdf.setFillColor(8, 124, 85);
-  pdf.rect(0, 0, 210, 28, "F");
-  pdf.setFillColor(67, 145, 201);
-  pdf.rect(0, 28, 210, 3, "F");
-  pdf.setTextColor(255, 255, 255);
-  pdf.setFontSize(17);
-  pdf.text("NileStock", 16, 13);
-  pdf.setFontSize(9);
-  pdf.text(business.name, 50, 13);
-  pdf.setFontSize(8);
-  pdf.text(
-    [business.address || business.country, business.phone, business.email]
-      .filter(Boolean)
-      .join(" • "),
-    16,
-    21,
-  );
-  pdf.setTextColor(20, 37, 30);
-  pdf.setFontSize(18);
-  pdf.text(title, 16, 40);
-  pdf.setFontSize(8);
-  pdf.setTextColor(100, 115, 107);
-  pdf.text(`Generated ${new Date().toLocaleString()}`, 194, 40, {
-    align: "right",
-  });
-  pdf.setDrawColor(220, 228, 224);
-  pdf.line(14, 285, 196, 285);
-  pdf.setFontSize(8);
-  pdf.setTextColor(95, 108, 101);
-  pdf.text(
-    [business.address || business.country, business.phone, business.email]
-      .filter(Boolean)
-      .join(" • "),
-    16,
-    291,
-  );
-  pdf.text("Powered by NileStock", 194, 291, { align: "right" });
-  return pdf;
-}
-function finalizePdf(pdf: jsPDF, business: Business) {
-  const pages = pdf.getNumberOfPages();
-  for (let page = 1; page <= pages; page++) {
-    pdf.setPage(page);
-    pdf.setDrawColor(220, 228, 224);
-    pdf.line(14, 285, 196, 285);
-    pdf.setFontSize(8);
-    pdf.setTextColor(95, 108, 101);
-    pdf.text(
-      [business.address || business.country, business.phone, business.email]
-        .filter(Boolean)
-        .join(" • "),
-      16,
-      291,
-    );
-    pdf.text(`Powered by NileStock • Page ${page} of ${pages}`, 194, 291, {
-      align: "right",
-    });
-  }
-}
-
 function PdfReports({ go }: { go: (p: Page) => void }) {
   const { data } = useApp();
   const { markDownloaded, labelFor } = useDownloadFeedback();
@@ -2935,46 +2877,8 @@ function PdfReports({ go }: { go: (p: Page) => void }) {
       return;
     }
     const snapshot = buildReportSnapshot(data, kind);
-    const pdf = brandedPdf(
-      data.business,
-      `${snapshot.title} • ${snapshot.period}`,
-    );
-    const columns = [16, 62, 108, 154];
-    pdf.setFontSize(11);
-    snapshot.metrics.forEach((metric, index) => {
-      const x = columns[index];
-      pdf.setTextColor(100, 115, 107);
-      pdf.setFontSize(8);
-      pdf.text(metric.label, x, 57);
-      pdf.setTextColor(8, 124, 85);
-      pdf.setFontSize(11);
-      pdf.text(metric.value.slice(0, 18), x, 65);
-    });
-    pdf.setTextColor(20, 37, 30);
-    pdf.setFontSize(9);
-    const insight = pdf.splitTextToSize(snapshot.insight, 178);
-    pdf.text(insight, 16, 76);
-    let y = 92;
-    snapshot.rows.slice(0, 20).forEach((row) => {
-      pdf.setFontSize(10);
-      pdf.setTextColor(20, 37, 30);
-      pdf.text(row.label.slice(0, 42), 16, y);
-      pdf.setFontSize(8);
-      pdf.setTextColor(100, 115, 107);
-      pdf.text(row.detail.slice(0, 62), 16, y + 4.5);
-      pdf.setFontSize(10);
-      pdf.setTextColor(20, 37, 30);
-      pdf.text(row.value.slice(0, 25), 194, y, {
-        align: "right",
-      });
-      y += 10;
-    });
-    if (!snapshot.rows.length) {
-      pdf.setTextColor(100, 115, 107);
-      pdf.text("No records are available for this report yet.", 16, 96);
-    }
+    const pdf = createBrandedReportPdf(data.business, snapshot);
     const filename = `${fileSafeName(data.business.name)}-${kind.toLowerCase().replaceAll(" ", "-")}-report.pdf`;
-    finalizePdf(pdf, data.business);
     if (!share) {
       pdf.save(filename);
       markDownloaded(kind);

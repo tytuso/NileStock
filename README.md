@@ -1,4 +1,11 @@
-# NileStock v10.2.5
+# NileStock v10.2.6
+
+## v10.2.6 polished PDF reports
+
+- Redesigned downloadable business reports with modern NileStock branding, structured KPI cards, a clear report summary and a bordered transaction table.
+- Added automatic table pagination with repeated report context on continuation pages.
+- Fixed the overlapping footer by rendering one balanced footer per page with business identity, NileStock branding and page numbering in separate columns.
+- Upgraded the Sales-page PDF export to use the same polished report system.
 
 ## v10.2.5 optional negotiated pricing
 
