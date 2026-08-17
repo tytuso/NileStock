@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgePercent,
@@ -29,7 +29,6 @@ import {
 import {
   describeCameraIssue,
   isAppleMobileDevice,
-  requestCameraAccess,
 } from "@/lib/camera-permission";
 import type { CameraIssue } from "@/lib/camera-permission";
 import { Button, Card, Field, Input, Modal, Select } from "./ui";
@@ -230,7 +229,7 @@ export function POS({
               <Input
                 ref={input}
                 className="pl-10"
-                placeholder="Search or scan a product…  F2"
+                placeholder="Search or scan a productâ€¦  F2"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -267,7 +266,7 @@ export function POS({
         </div>
         {offline && (
           <div className="flex items-center gap-2 bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
-            <WifiOff size={14} /> Offline — sales are safely queued and will
+            <WifiOff size={14} /> Offline â€” sales are safely queued and will
             sync when connected.
           </div>
         )}
@@ -632,21 +631,15 @@ function Scanner({
     setCameraIssue(issue);
     setCameraState(issue.kind === "denied" ? "blocked" : "unavailable");
   }, []);
-  const retryCamera = useCallback(async () => {
+  const retryCamera = useCallback(() => {
     setRequestingCamera(true);
     setCameraState("starting");
     setCameraIssue(null);
     setError("");
-    try {
-      await requestCameraAccess(navigator.mediaDevices);
-      localStorage.removeItem(CAMERA_KEY);
-      setRetryVersion((version) => version + 1);
-    } catch (cause) {
-      showCameraIssue(cause);
-    } finally {
-      setRequestingCamera(false);
-    }
-  }, [showCameraIssue]);
+    localStorage.removeItem(CAMERA_KEY);
+    setRetryVersion((version) => version + 1);
+    window.setTimeout(() => setRequestingCamera(false), 250);
+  }, []);
   const submit = (raw: string) => {
     const code = raw.trim();
     if (!code) {
@@ -659,7 +652,7 @@ function Scanner({
       return true;
     }
     setError(
-      `No product matches “${code}”. Check the digits and re-enter the code.`,
+      `No product matches â€œ${code}â€. Check the digits and re-enter the code.`,
     );
     return false;
   };
@@ -683,17 +676,35 @@ function Scanner({
     (async () => {
       try {
         const { Html5Qrcode } = await import("html5-qrcode");
-        const remembered = localStorage.getItem(CAMERA_KEY);
-        const cameras = remembered ? [] : await Html5Qrcode.getCameras();
+        const appleMobile = isAppleMobileDevice(
+          navigator.userAgent,
+          navigator.platform,
+          navigator.maxTouchPoints,
+        );
+
+        if (appleMobile) localStorage.removeItem(CAMERA_KEY);
+
+        const remembered = appleMobile
+          ? null
+          : localStorage.getItem(CAMERA_KEY);
+
+        const cameras =
+          appleMobile || remembered ? [] : await Html5Qrcode.getCameras();
+
         const selected = cameras.length
           ? cameras.find((camera) =>
               /back|rear|environment/i.test(camera.label),
             ) || cameras.at(-1)
           : undefined;
-        if (selected) localStorage.setItem(CAMERA_KEY, selected.id);
+
+        if (selected && !appleMobile)
+          localStorage.setItem(CAMERA_KEY, selected.id);
+
         scanner = new Html5Qrcode(id);
         await scanner.start(
-          remembered || selected?.id || { facingMode: "environment" },
+          appleMobile
+            ? { facingMode: "environment" }
+            : remembered || selected?.id || { facingMode: "environment" },
           { fps: 15, qrbox: { width: 250, height: 160 } },
           (code: string) => {
             if (accepted || stopped) return;
@@ -701,14 +712,23 @@ function Scanner({
               accepted = true;
             } else {
               setError(
-                `No product matches “${code}”. Check the barcode and scan again.`,
+                `No product matches â€œ${code}â€. Check the barcode and scan again.`,
               );
             }
           },
           () => {},
         );
-        if (stopped) await scanner.stop().catch(() => {});
-        else setCameraState("active");
+        if (stopped) {
+          await scanner.stop().catch(() => {});
+        } else {
+          const video = document.getElementById(id)?.querySelector("video");
+          if (video) {
+            video.playsInline = true;
+            video.muted = true;
+            void video.play().catch(() => {});
+          }
+          setCameraState("active");
+        }
       } catch (cause) {
         if (stopped) return;
         showCameraIssue(cause);
@@ -737,8 +757,8 @@ function Scanner({
               <p className="text-sm font-semibold">
                 {cameraState === "starting"
                   ? requestingCamera
-                    ? "Requesting camera permission…"
-                    : "Starting rear camera…"
+                    ? "Requesting camera permissionâ€¦"
+                    : "Starting rear cameraâ€¦"
                   : "Camera needs attention"}
               </p>
             </div>
@@ -782,7 +802,7 @@ function Scanner({
                   <RotateCcw size={15} />
                 )}
                 {requestingCamera
-                  ? "Requesting…"
+                  ? "Requestingâ€¦"
                   : cameraIssue.kind === "denied"
                     ? "Allow camera"
                     : "Try camera again"}
@@ -828,9 +848,10 @@ function Scanner({
       </div>
       <p id="scanner-manual-help" className="mt-2 text-xs text-muted">
         Camera video stays on this device and is used only to read product
-        codes. NileStock remembers the camera you approved on this phone. If
-        the code is not recognised, add it to the product first.
+        codes. NileStock prefers the rear camera automatically. If the code is
+        not recognised, add it to the product first.
       </p>
     </Modal>
   );
 }
+
