@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgePercent,
@@ -229,7 +229,7 @@ export function POS({
               <Input
                 ref={input}
                 className="pl-10"
-                placeholder="Search or scan a productâ€¦  F2"
+                placeholder="Search or scan a product…  F2"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -266,7 +266,7 @@ export function POS({
         </div>
         {offline && (
           <div className="flex items-center gap-2 bg-amber-100 px-4 py-2 text-xs font-semibold text-amber-900">
-            <WifiOff size={14} /> Offline â€” sales are safely queued and will
+            <WifiOff size={14} /> Offline — sales are safely queued and will
             sync when connected.
           </div>
         )}
@@ -652,7 +652,7 @@ function Scanner({
       return true;
     }
     setError(
-      `No product matches â€œ${code}â€. Check the digits and re-enter the code.`,
+      `No product matches “${code}”. Check the digits and re-enter the code.`,
     );
     return false;
   };
@@ -712,7 +712,7 @@ function Scanner({
               accepted = true;
             } else {
               setError(
-                `No product matches â€œ${code}â€. Check the barcode and scan again.`,
+                `No product matches “${code}”. Check the barcode and scan again.`,
               );
             }
           },
@@ -757,8 +757,8 @@ function Scanner({
               <p className="text-sm font-semibold">
                 {cameraState === "starting"
                   ? requestingCamera
-                    ? "Requesting camera permissionâ€¦"
-                    : "Starting rear cameraâ€¦"
+                    ? "Requesting camera permission…"
+                    : "Starting rear camera…"
                   : "Camera needs attention"}
               </p>
             </div>
@@ -802,7 +802,7 @@ function Scanner({
                   <RotateCcw size={15} />
                 )}
                 {requestingCamera
-                  ? "Requestingâ€¦"
+                  ? "Requesting…"
                   : cameraIssue.kind === "denied"
                     ? "Allow camera"
                     : "Try camera again"}
@@ -854,4 +854,3 @@ function Scanner({
     </Modal>
   );
 }
-
