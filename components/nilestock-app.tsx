@@ -970,7 +970,7 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
         className="text-sm font-semibold text-accent"
         onClick={() => go("Products")}
       >
-        ÃƒÂ¢Ã¢â‚¬Â Ã‚Â Back to Products
+        ← Back to Products
       </button>
       <div className="rounded-2xl bg-gradient-to-r from-emerald-950 via-[#15596a] to-[#40538d] p-7 text-white">
         <Upload />
