@@ -39,6 +39,45 @@ const welcome: ChatMessage = {
     "I’m your NileStock AI Business Adviser. I use your latest products, sales, expenses, stock and customer requests to give practical answers. What would you like to improve first?",
 };
 
+function sanitizeChatMessages(value: unknown): ChatMessage[] {
+  if (!Array.isArray(value)) return [welcome];
+
+  const cleaned = value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+
+    const item = candidate as Partial<ChatMessage>;
+
+    if (
+      (item.role !== "user" && item.role !== "assistant") ||
+      typeof item.content !== "string"
+    )
+      return [];
+
+    const content = (
+      item.role === "assistant"
+        ? cleanAdviserText(item.content)
+        : item.content
+    )
+      .trim()
+      .slice(0, 1_200);
+
+    if (!content) return [];
+
+    return [
+      {
+        id:
+          typeof item.id === "string" && item.id
+            ? item.id
+            : crypto.randomUUID(),
+        role: item.role,
+        content,
+      } satisfies ChatMessage,
+    ];
+  });
+
+  return cleaned.length ? cleaned.slice(-20) : [welcome];
+}
+
 export function AiAdviser({ openBilling }: { openBilling: () => void }) {
   const { data } = useApp();
   const pro = isProPlan(data.business.plan);
@@ -57,15 +96,7 @@ export function AiAdviser({ openBilling }: { openBilling: () => void }) {
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved)
-        setMessages(
-          (JSON.parse(saved) as ChatMessage[]).map((message) => ({
-            ...message,
-            content:
-              message.role === "assistant"
-                ? cleanAdviserText(message.content)
-                : message.content,
-          })),
-        );
+        setMessages(sanitizeChatMessages(JSON.parse(saved)));
     } catch {
       setMessages([welcome]);
     }
@@ -94,8 +125,12 @@ export function AiAdviser({ openBilling }: { openBilling: () => void }) {
     const assistantId = crypto.randomUUID();
     const outgoing = [...messages, userMessage]
       .filter((message) => message.id !== "welcome")
-      .slice(-8)
-      .map(({ role, content }) => ({ role, content }));
+      .map(({ role, content }) => ({
+        role,
+        content: content.trim().slice(0, 1_200),
+      }))
+      .filter((message) => message.content.length > 0)
+      .slice(-8);
     setMessages((current) => [
       ...current,
       userMessage,
@@ -110,15 +145,28 @@ export function AiAdviser({ openBilling }: { openBilling: () => void }) {
       } = (await supabase?.auth.getSession()) || { data: { session: null } };
       if (!session?.access_token) throw new Error("Sign in again to use NileStock AI.");
       firstAnswerTimer = setTimeout(() => controller.abort(), 20_000);
-      const response = await fetch("/api/ai", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ messages: outgoing }),
-        signal: controller.signal,
-      });
+      const makeRequest = (accessToken: string) =>
+        fetch("/api/ai", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ messages: outgoing }),
+          signal: controller.signal,
+        });
+
+      let response = await makeRequest(session.access_token);
+
+      if (response.status === 401 && supabase) {
+        const { data: refreshed } = await supabase.auth.refreshSession();
+        const freshToken = refreshed.session?.access_token;
+
+        if (freshToken) {
+          response = await makeRequest(freshToken);
+        }
+      }
+
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
         throw new Error(result.error || "NileStock AI could not answer right now.");

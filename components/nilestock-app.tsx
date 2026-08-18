@@ -250,7 +250,7 @@ export function NileStockApp({
       </div>
     );
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_78%_8%,rgba(126,199,255,.18),transparent_30%),radial-gradient(circle_at_20%_88%,rgba(57,196,137,.11),transparent_28%),#f6f5ef] text-ink dark:bg-[radial-gradient(circle_at_78%_8%,rgba(61,132,186,.20),transparent_32%),radial-gradient(circle_at_18%_88%,rgba(45,169,132,.10),transparent_28%),#071426]">
+    <div className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_78%_8%,rgba(126,199,255,.18),transparent_30%),radial-gradient(circle_at_20%_88%,rgba(57,196,137,.11),transparent_28%),#f6f5ef] text-ink dark:bg-[radial-gradient(circle_at_78%_8%,rgba(61,132,186,.20),transparent_32%),radial-gradient(circle_at_18%_88%,rgba(45,169,132,.10),transparent_28%),#071426]">
       {mobile && (
         <button
           className="fixed inset-0 z-40 bg-[#06101e]/55 backdrop-blur-[1px] lg:hidden"
@@ -331,7 +331,7 @@ export function NileStockApp({
         </div>
       </aside>
       <div
-        className={`transition-all ${collapsed ? "lg:pl-[74px]" : "lg:pl-64"}`}
+        className={`min-w-0 transition-all ${collapsed ? "lg:pl-[74px]" : "lg:pl-64"}`}
       >
         <header className="sticky top-0 z-40 flex h-16 items-center gap-3 border-b border-line bg-[linear-gradient(100deg,rgba(238,252,246,.96),rgba(239,248,255,.96),rgba(246,244,255,.96))] px-4 backdrop-blur dark:bg-[linear-gradient(100deg,rgba(13,43,32,.96),rgba(15,35,49,.96),rgba(29,27,48,.96))] lg:px-7">
           <button
@@ -427,7 +427,7 @@ export function NileStockApp({
             </div>
           </div>
         )}
-        <main className="min-h-[calc(100vh-64px)] bg-[radial-gradient(circle_at_18%_6%,rgba(65,205,148,.10),transparent_28%),radial-gradient(circle_at_88%_8%,rgba(104,165,240,.12),transparent_30%)] p-4 lg:p-7">
+        <main className="min-h-[calc(100vh-64px)] overflow-x-hidden bg-[radial-gradient(circle_at_18%_6%,rgba(65,205,148,.10),transparent_28%),radial-gradient(circle_at_88%_8%,rgba(104,165,240,.12),transparent_30%)] p-4 lg:p-7">
           {page === "Overview" && <Overview go={setPage} />}{" "}
           {page === "Sale" && (
             <POS
@@ -970,7 +970,7 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
         className="text-sm font-semibold text-accent"
         onClick={() => go("Products")}
       >
-        ← Back to Products
+        ÃƒÂ¢Ã¢â‚¬Â Ã‚Â Back to Products
       </button>
       <div className="rounded-2xl bg-gradient-to-r from-emerald-950 via-[#15596a] to-[#40538d] p-7 text-white">
         <Upload />
@@ -3081,12 +3081,50 @@ function PdfReports({ go }: { go: (p: Page) => void }) {
 }
 
 const billingPlans = PLAN_ORDER.map((plan) => PLAN_DEFINITIONS[plan]);
+
+const FLUTTERWAVE_MONTHLY_LINKS = {
+  starter: "https://flutterwave.com/pay/wxjtdlvtfs6c",
+  business: "https://flutterwave.com/pay/c4vbx0ku4o2m",
+  pro: "https://flutterwave.com/pay/aopifiudflyq",
+} as const;
 function BillingView() {
   const { data, setData } = useApp();
   const [annual, setAnnual] = useState(false),
     [chosen, setChosen] = useState<(typeof billingPlans)[number] | null>(null),
     [billingBusy, setBillingBusy] = useState(false),
     [billingError, setBillingError] = useState("");
+  const payWithFlutterwave = async () => {
+    if (!chosen || chosen.id === "free" || annual) return;
+
+    const paymentLink =
+      FLUTTERWAVE_MONTHLY_LINKS[
+        chosen.id as keyof typeof FLUTTERWAVE_MONTHLY_LINKS
+      ];
+
+    if (!paymentLink) {
+      setBillingError("Online payment is not available for this plan yet.");
+      return;
+    }
+
+    setBillingError("");
+
+    setData((current) => ({
+      ...current,
+      audit: [
+        {
+          id: uid(),
+          actor: "Owner",
+          action: "Flutterwave payment started",
+          record: `${chosen.name} monthly`,
+          createdAt: now(),
+        },
+        ...current.audit,
+      ],
+    }));
+
+    window.location.assign(paymentLink);
+  };
+
   const request = async (method: string) => {
     if (!chosen) return;
     setBillingBusy(true);
@@ -3273,26 +3311,56 @@ function BillingView() {
             </p>
           )}
           <div className="grid gap-2">
-            <Button
-              disabled={billingBusy}
-              onClick={() => request("Mobile Money")}
-            >
-              Continue with Mobile Money
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={billingBusy}
-              onClick={() => request("Bank transfer")}
-            >
-              Request bank details
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={billingBusy}
-              onClick={() => request("Card / online payment")}
-            >
-              Card / online payment
-            </Button>
+            {!annual && chosen && chosen.price > 0 ? (
+              <>
+                <Button
+                  disabled={billingBusy}
+                  onClick={payWithFlutterwave}
+                  className="min-h-12"
+                >
+                  {billingBusy
+                    ? "Opening secure checkout..."
+                    : "Pay securely with Flutterwave"}
+                </Button>
+
+                <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs leading-5 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/35 dark:text-emerald-200">
+                  Secure monthly checkout for {chosen.name}. After payment,
+                  NileStock support will confirm the transaction and activate
+                  your plan.
+                </div>
+
+                <Button
+                  variant="secondary"
+                  disabled={billingBusy}
+                  onClick={() => request("Payment support")}
+                >
+                  I need help with payment
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900 dark:border-amber-900 dark:bg-amber-950/35 dark:text-amber-100">
+                  Annual online checkout is not available yet. Contact
+                  NileStock support to activate the annual plan and receive
+                  the two-month discount.
+                </div>
+
+                <Button
+                  disabled={billingBusy}
+                  onClick={() => request("Mobile Money")}
+                >
+                  Continue with Mobile Money
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  disabled={billingBusy}
+                  onClick={() => request("Bank transfer")}
+                >
+                  Request bank details
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </Modal>

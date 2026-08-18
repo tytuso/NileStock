@@ -167,6 +167,25 @@ export function Entry() {
       return;
     }
     let active = true;
+
+    // NileStock cached-session fast boot:
+    // show locally saved access immediately while cloud verification
+    // continues in the background.
+    try {
+      const cachedSessionRaw = localStorage.getItem("nilestock.session");
+      if (cachedSessionRaw) {
+        const cached = JSON.parse(cachedSessionRaw) as Session;
+        if (cached?.email) setSession(cached);
+      }
+    } catch {
+      // Cloud authentication below remains authoritative.
+    }
+
+    const sessionFallback = window.setTimeout(() => {
+      if (active)
+        setSession((current) => (current === undefined ? null : current));
+    }, 12000);
+
     const hydrate = async (user: User | null) => {
       if (!active) return;
       if (!user) {
@@ -354,7 +373,7 @@ export function Entry() {
           };
         if (workspaceResult.error && !localBackup) {
           setAuthMessage(
-            "Your workspace could not be downloaded. Nothing was replacedâ€”check the connection and try again.",
+            "Your workspace could not be downloaded. Nothing was replaced—check the connection and try again.",
           );
           setSession(null);
           return;
@@ -453,12 +472,16 @@ export function Entry() {
         setAuth(null);
         setAuthMessage("");
       } catch (error) {
-        if (active)
+        if (active) {
           setAuthMessage(
             error instanceof Error
               ? error.message
               : "Could not load your NileStock workspace.",
           );
+          setSession((current) =>
+            current === undefined ? null : current,
+          );
+        }
       } finally {
         if (hydratingUser.current === user.id) hydratingUser.current = null;
       }
@@ -489,6 +512,7 @@ export function Entry() {
     };
     addEventListener("online", reconnect);
     return () => {
+      window.clearTimeout(sessionFallback);
       active = false;
       removeEventListener("online", reconnect);
       subscription.unsubscribe();
@@ -881,7 +905,18 @@ export function Entry() {
     setInstallHelp(true);
   };
   if (session === undefined)
-    return <div className="min-h-screen bg-[#f8faf9]" />;
+    return (
+      <div className="min-h-screen bg-[#f8faf9]">
+        <div className="h-16 border-b border-[#e3e9e5] bg-white" />
+        <main className="mx-auto max-w-7xl p-4 sm:p-6">
+          <div className="h-24 rounded-3xl border border-[#e3e9e5] bg-white" />
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="h-32 rounded-3xl border border-[#e3e9e5] bg-white" />
+            <div className="h-32 rounded-3xl border border-[#e3e9e5] bg-white" />
+          </div>
+        </main>
+      </div>
+    );
   if (session)
     return (
       <NileStockApp session={session} signOut={signOut} />
@@ -981,7 +1016,7 @@ export function Entry() {
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-[#56675f]">
               NileStock turns your phone, tablet or laptop into a complete
-              retail operating systemâ€”fast POS, live stock, receipts, customer
+              retail operating system—fast POS, live stock, receipts, customer
               credit and business reports in one premium workspace. Start
               without buying a dedicated POS machine.
             </p>
@@ -1016,7 +1051,7 @@ export function Entry() {
               <div className="rounded-xl bg-[#12251e] p-5 text-white">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-emerald-200">
-                    Todayâ€™s sales
+                    Today’s sales
                   </span>
                   <span className="rounded-full bg-white/10 px-2 py-1 text-[10px]">
                     Live
@@ -1242,7 +1277,7 @@ export function Entry() {
                 <ul className="space-y-3 text-sm">
                   {(x[3] as string[]).map((f) => (
                     <li className="flex gap-2" key={f}>
-                      <span className="text-emerald-700">âœ“</span>
+                      <span className="text-emerald-700">✓</span>
                       {f}
                     </li>
                   ))}
@@ -1305,7 +1340,7 @@ export function Entry() {
           className="border-t border-[#dce5e0] px-5 py-10 text-center text-sm text-[#62736b]"
         >
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
-            <span>NileStock by Nile AI Solutions â€¢ nilestock.shop</span>
+            <span>NileStock by Nile AI Solutions • nilestock.shop</span>
             <a href="/privacy" className="text-emerald-700">Privacy</a>
             <a href="/terms" className="text-emerald-700">Terms</a>
             <a href="/blog" className="text-emerald-700">Blog</a>
@@ -1366,7 +1401,7 @@ export function Entry() {
               onClick={() => void resendConfirmation()}
             >
               <RefreshCw size={16} className={resendBusy ? "animate-spin" : ""} />
-              {resendBusy ? "Sendingâ€¦" : "Resend confirmation email"}
+              {resendBusy ? "Sending…" : "Resend confirmation email"}
             </Button>
             <button
               type="button"
@@ -1422,7 +1457,7 @@ export function Entry() {
           )}
           <Button disabled={authBusy}>
             {authBusy
-              ? "Please waitâ€¦"
+              ? "Please wait..."
               : auth === "signup"
                 ? "Create account"
                 : "Sign in"}

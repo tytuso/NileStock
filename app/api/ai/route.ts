@@ -10,12 +10,24 @@ const requestSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().trim().min(1).max(1_200),
+        content: z.string(),
       }),
     )
     .min(1)
-    .max(8),
+    .max(40),
 });
+
+function sanitizeMessages(
+  messages: z.infer<typeof requestSchema>["messages"],
+) {
+  return messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content.trim().slice(0, 1_200),
+    }))
+    .filter((message) => message.content.length > 0)
+    .slice(-8);
+}
 
 const list = (value: unknown) => (Array.isArray(value) ? value : []);
 const number = (value: unknown) =>
@@ -98,6 +110,13 @@ export async function POST(request: Request) {
   if (!parsed.success)
     return Response.json({ error: "That AI request is not valid." }, { status: 400 });
 
+  const messages = sanitizeMessages(parsed.data.messages);
+  if (!messages.length)
+    return Response.json(
+      { error: "Enter a question for NileStock AI." },
+      { status: 400 },
+    );
+
   const supabase = getSupabaseServerClient(accessToken);
   const {
     data: { user },
@@ -150,7 +169,7 @@ export async function POST(request: Request) {
 
   if ((count || 0) >= 50)
     return Response.json(
-      { error: "Today’s 50 AI-question allowance has been used. Try again tomorrow." },
+      { error: "Todayâ€™s 50 AI-question allowance has been used. Try again tomorrow." },
       { status: 429 },
     );
 
@@ -165,9 +184,9 @@ export async function POST(request: Request) {
   const result = streamText({
     model: openai(model),
     reasoning: "none",
-    system: `You are NileStock AI, a practical senior retail business adviser for an African small shop. Use only the supplied live business summary for business-specific facts. Never invent sales, prices, stock or profit. Explain conclusions in plain language, use UGX unless the summary shows otherwise, and finish with 2-4 concrete next actions. Protect privacy: the summary intentionally excludes customer and supplier contact details. Return polished plain text only. Never use Markdown symbols such as #, *, _, backticks or Markdown tables. Use short title lines and the bullet character • when a list helps.\n\nLIVE BUSINESS SUMMARY:\n${context}`,
-    messages: parsed.data.messages,
-    maxOutputTokens: 420,
+    system: `You are NileStock AI, a practical senior retail business adviser for an African small shop. Use only the supplied live business summary for business-specific facts. Never invent sales, prices, stock or profit. Explain conclusions in plain language, use UGX unless the summary shows otherwise, and finish with 2-4 concrete next actions. Protect privacy: the summary intentionally excludes customer and supplier contact details. Return polished plain text only. Never use Markdown symbols such as #, *, _, backticks or Markdown tables. Use short title lines and the bullet character â€¢ when a list helps.\n\nLIVE BUSINESS SUMMARY:\n${context}`,
+    messages,
+    maxOutputTokens: 700,
   });
 
   return createTextStreamResponse({ stream: toTextStream({ stream: result.stream }) });
