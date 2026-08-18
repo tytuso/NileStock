@@ -5,7 +5,9 @@ const posSource = readFileSync(
   new URL("../components/pos.tsx", import.meta.url),
   "utf8",
 );
-const scannerSource = posSource.slice(posSource.indexOf("function Scanner("));
+const scannerSource = posSource.slice(
+  posSource.indexOf("export function BarcodeScanner("),
+);
 
 describe("scanner keyboard priority", () => {
   it("dismisses an existing keyboard before opening the camera", () => {

@@ -150,14 +150,7 @@ export function POS({
     prepareScanFeedback();
     setScanOpen(true);
   }, []);
-  const acceptCameraCode = useCallback(
-    (code: string) => {
-      if (!scan(code)) return false;
-      setScanOpen(false);
-      return true;
-    },
-    [scan],
-  );
+  const acceptCameraCode = useCallback((code: string) => scan(code), [scan]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === "F2") {
@@ -602,7 +595,7 @@ export function POS({
           </Button>
         </div>
       </Modal>
-      <Scanner
+      <BarcodeScanner
         open={scanOpen}
         close={() => setScanOpen(false)}
         onCode={acceptCameraCode}
@@ -610,14 +603,18 @@ export function POS({
     </div>
   );
 }
-function Scanner({
+export function BarcodeScanner({
   open,
   close,
   onCode,
+  title = "Scan product",
+  captureMode = false,
 }: {
   open: boolean;
   close: () => void;
   onCode: (c: string) => boolean;
+  title?: string;
+  captureMode?: boolean;
 }) {
   const [id] = useState(() => `scanner-${Math.random().toString(36).slice(2)}`),
     [manual, setManual] = useState(""),
@@ -627,7 +624,20 @@ function Scanner({
     >("starting"),
     [cameraIssue, setCameraIssue] = useState<CameraIssue | null>(null),
     [requestingCamera, setRequestingCamera] = useState(false),
-    [retryVersion, setRetryVersion] = useState(0);
+    [retryVersion, setRetryVersion] = useState(0),
+    [pageVisible, setPageVisible] = useState(true);
+
+  const historyMarker = useRef<string | null>(null);
+  const closeRef = useRef(close);
+  const onCodeRef = useRef(onCode);
+
+  useEffect(() => {
+    closeRef.current = close;
+  }, [close]);
+
+  useEffect(() => {
+    onCodeRef.current = onCode;
+  }, [onCode]);
   const showCameraIssue = useCallback((cause: unknown) => {
     const issue = describeCameraIssue(cause, {
       isAppleMobile: isAppleMobileDevice(
@@ -655,15 +665,121 @@ function Scanner({
       setRequestingCamera(false);
     }
   }, [showCameraIssue]);
+  const closeScanner = useCallback(() => {
+    const marker = historyMarker.current;
+
+    if (
+      marker &&
+      history.state?.nilestockScanner === marker
+    ) {
+      historyMarker.current = null;
+      history.back();
+      return;
+    }
+
+    closeRef.current();
+  }, []);
+
+  /*
+   * Keep browser Back inside NileStock while the camera is open.
+   * The temporary history entry means Back closes the scanner
+   * instead of returning to an old OAuth/browser page.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const marker = `nilestock-scanner-${id}-${Date.now()}`;
+    historyMarker.current = marker;
+
+    history.pushState(
+      {
+        ...(history.state || {}),
+        nilestockScanner: marker,
+      },
+      "",
+      location.href,
+    );
+
+    const onPopState = () => {
+      if (historyMarker.current === marker) {
+        historyMarker.current = null;
+        closeRef.current();
+      }
+    };
+
+    addEventListener("popstate", onPopState);
+
+    return () => {
+      removeEventListener("popstate", onPopState);
+
+      if (
+        historyMarker.current === marker &&
+        history.state?.nilestockScanner === marker
+      ) {
+        const currentState =
+          history.state && typeof history.state === "object"
+            ? { ...history.state }
+            : {};
+
+        delete currentState.nilestockScanner;
+
+        history.replaceState(
+          currentState,
+          "",
+          location.href,
+        );
+
+        historyMarker.current = null;
+      }
+    };
+  }, [open, id]);
+
+  /*
+   * iOS suspends camera streams when Safari/PWA goes into
+   * the background. Mark the scanner inactive while hidden;
+   * the camera effect below will stop and recreate the stream
+   * when NileStock becomes visible again.
+   */
+  useEffect(() => {
+    if (!open) return;
+
+    const updateVisibility = () => {
+      const visible = document.visibilityState === "visible";
+      setPageVisible(visible);
+
+      if (!visible) {
+        setCameraState("starting");
+      }
+    };
+
+    const onPageHide = () => setPageVisible(false);
+    const onPageShow = () => {
+      setPageVisible(true);
+    };
+
+    updateVisibility();
+
+    document.addEventListener("visibilitychange", updateVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onPageShow);
+
+    return () => {
+      document.removeEventListener("visibilitychange", updateVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onPageShow);
+    };
+  }, [open]);
+
   const submit = (raw: string) => {
     const code = raw.trim();
     if (!code) {
       setError("Enter the barcode, QR code or SKU, then try again.");
       return false;
     }
-    if (onCode(code)) {
+    if (onCodeRef.current(code)) {
       setError("");
       setManual("");
+      closeScanner();
       return true;
     }
     setError(
@@ -680,7 +796,8 @@ function Scanner({
     };
   }, [open]);
   useEffect(() => {
-    if (!open) return;
+    if (!open || !pageVisible) return;
+
     setManual("");
     setError("");
     setCameraState("starting");
@@ -690,6 +807,9 @@ function Scanner({
     let accepted = false;
     (async () => {
       try {
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+        if (stopped || !pageVisible) return;
+
         const { Html5Qrcode } = await import("html5-qrcode");
         const remembered = localStorage.getItem(CAMERA_KEY);
         const cameras = remembered ? [] : await Html5Qrcode.getCameras();
@@ -705,8 +825,9 @@ function Scanner({
           { fps: 15, qrbox: { width: 250, height: 160 } },
           (code: string) => {
             if (accepted || stopped) return;
-            if (onCode(code)) {
+            if (onCodeRef.current(code)) {
               accepted = true;
+              closeScanner();
             } else {
               setError(
                 `No product matches “${code}”. Check the barcode and scan again.`,
@@ -726,9 +847,16 @@ function Scanner({
       stopped = true;
       scanner?.stop().catch(() => {});
     };
-  }, [open, id, onCode, retryVersion, showCameraIssue]);
+  }, [
+    open,
+    id,
+    retryVersion,
+    showCameraIssue,
+    pageVisible,
+    closeScanner,
+  ]);
   return (
-    <Modal open={open} onClose={close} title="Scan product">
+    <Modal open={open} onClose={closeScanner} title={title}>
       <div className="scanner-lock relative overflow-hidden rounded-xl bg-black">
         <div id={id} className="min-h-64" />
         {cameraState !== "active" && (
@@ -810,8 +938,9 @@ function Scanner({
         </p>
       )}
       <p className="mt-3 text-sm text-muted">
-        Camera scanning is active. Tap the field only when you want to enter a
-        code manually.
+        {captureMode
+          ? "Point the camera at the product's existing barcode. NileStock will copy the exact scanned code into the new product automatically."
+          : "Camera scanning is active. Tap the field only when you want to enter a code manually."}
       </p>
       <div className="mt-3 flex gap-2">
         <Input

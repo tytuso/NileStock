@@ -27,6 +27,7 @@ import {
   ReceiptText,
   RefreshCw,
   Search,
+  ScanLine,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -69,7 +70,7 @@ import {
   Select,
   Textarea,
 } from "./ui";
-import { POS } from "./pos";
+import { BarcodeScanner, POS } from "./pos";
 import { CodeCatalogue } from "./codes";
 import { Receipt } from "./receipt";
 import {
@@ -635,7 +636,10 @@ function Products({ go }: { go: (p: Page) => void }) {
   const [open, setOpen] = useState(false),
     [q, setQ] = useState(""),
     [limitOpen, setLimitOpen] = useState(false),
-    [savedNotice, setSavedNotice] = useState("");
+    [savedNotice, setSavedNotice] = useState(""),
+    [barcodeScanOpen, setBarcodeScanOpen] = useState(false),
+    [capturedBarcode, setCapturedBarcode] = useState(""),
+    [productError, setProductError] = useState("");
   const limit = productLimit(data.business.plan);
   const atLimit = limit !== null && data.products.length >= limit;
   const nextPlanId = data.business.plan === "free" ? "starter" : "business";
@@ -646,11 +650,35 @@ function Products({ go }: { go: (p: Page) => void }) {
       setLimitOpen(true);
       return;
     }
-    const name = String(fd.get("name")),
-      sku = String(fd.get("sku") || `NS-${Date.now().toString().slice(-6)}`),
-      code = String(
-        fd.get("barcode") || `24${Date.now().toString().slice(-10)}`,
+    const name = String(fd.get("name")).trim();
+
+    const sku = String(
+      fd.get("sku") || `NS-${Date.now().toString().slice(-6)}`,
+    ).trim();
+
+    const enteredBarcode = String(
+      fd.get("barcode") || "",
+    ).trim();
+
+    const code =
+      enteredBarcode ||
+      `24${Date.now().toString().slice(-10)}`;
+
+    const duplicate = data.products.find(
+      (product) =>
+        product.barcode.trim().toLowerCase() ===
+        code.toLowerCase(),
+    );
+
+    if (duplicate) {
+      setProductError(
+        `Barcode ${code} is already saved as "${duplicate.name}". No duplicate product was created.`,
       );
+      return;
+    }
+
+    setProductError("");
+
     addProduct({
       name,
       description: String(fd.get("description") || ""),
@@ -670,8 +698,59 @@ function Products({ go }: { go: (p: Page) => void }) {
     });
     setSavedNotice(`${name} saved safely to inventory • syncing automatically`);
     window.setTimeout(() => setSavedNotice(""), 3200);
+
+    setCapturedBarcode("");
+    setProductError("");
     setOpen(false);
   };
+
+  const openManualProduct = () => {
+    if (atLimit) {
+      setLimitOpen(true);
+      return;
+    }
+
+    setCapturedBarcode("");
+    setProductError("");
+    setOpen(true);
+  };
+
+  const openBarcodeProduct = () => {
+    if (atLimit) {
+      setLimitOpen(true);
+      return;
+    }
+
+    setCapturedBarcode("");
+    setProductError("");
+    setBarcodeScanOpen(true);
+  };
+
+  const captureExistingBarcode = (rawCode: string) => {
+    const code = rawCode.trim();
+
+    if (!code) return false;
+
+    setCapturedBarcode(code);
+
+    const existing = data.products.find(
+      (product) =>
+        product.barcode.trim().toLowerCase() ===
+        code.toLowerCase(),
+    );
+
+    if (existing) {
+      setProductError(
+        `This barcode is already saved as "${existing.name}".`,
+      );
+    } else {
+      setProductError("");
+    }
+
+    setOpen(true);
+    return true;
+  };
+
   const list = data.products.filter((p) =>
     [p.name, p.sku, p.barcode, p.category].some((value) =>
       value.toLowerCase().includes(q.trim().toLowerCase()),
@@ -712,11 +791,14 @@ function Products({ go }: { go: (p: Page) => void }) {
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <Button
-          onClick={() => (atLimit ? setLimitOpen(true) : setOpen(true))}
-        >
+        <Button onClick={openManualProduct}>
           <Plus size={16} /> Add product
         </Button>
+
+        <Button variant="secondary" onClick={openBarcodeProduct}>
+          <ScanLine size={16} /> Scan existing barcode
+        </Button>
+
         <Button variant="secondary" onClick={() => go("Import Products")}>
           <Upload size={16} /> Import products
         </Button>
@@ -812,7 +894,7 @@ function Products({ go }: { go: (p: Page) => void }) {
             }
             action={
               !data.products.length ? (
-                <Button onClick={() => setOpen(true)}>Add first product</Button>
+                <Button onClick={openManualProduct}>Add first product</Button>
               ) : undefined
             }
           />
@@ -820,6 +902,29 @@ function Products({ go }: { go: (p: Page) => void }) {
       </Card>
       <Modal open={open} onClose={() => setOpen(false)} title="Add product">
         <form action={save} className="grid gap-4">
+          {productError && (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950/45 dark:text-red-200"
+            >
+              {productError}
+            </div>
+          )}
+
+          {capturedBarcode && !productError && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950/45 dark:text-emerald-100">
+              <b>Barcode scanned successfully.</b>
+
+              <span className="mt-1 block font-mono text-xs">
+                {capturedBarcode}
+              </span>
+
+              <span className="mt-1 block text-xs opacity-75">
+                NileStock received this code directly from the camera. You do not need to type the barcode.
+              </span>
+            </div>
+          )}
+
           <Field label="Product name">
             <Input name="name" required />
           </Field>
@@ -856,8 +961,14 @@ function Products({ go }: { go: (p: Page) => void }) {
             <Field label="SKU (auto if blank)">
               <Input name="sku" />
             </Field>
-            <Field label="Barcode (auto if blank)">
-              <Input name="barcode" />
+            <Field label="Barcode (scan existing or auto if blank)">
+              <Input
+                key={capturedBarcode || "manual-barcode"}
+                name="barcode"
+                defaultValue={capturedBarcode}
+                inputMode="numeric"
+                autoComplete="off"
+              />
             </Field>
           </div>
           <Field label="Description">
@@ -868,6 +979,15 @@ function Products({ go }: { go: (p: Page) => void }) {
           </Button>
         </form>
       </Modal>
+
+      <BarcodeScanner
+        open={barcodeScanOpen}
+        close={() => setBarcodeScanOpen(false)}
+        onCode={captureExistingBarcode}
+        title="Scan existing product barcode"
+        captureMode
+      />
+
       <Modal
         open={limitOpen}
         onClose={() => setLimitOpen(false)}
