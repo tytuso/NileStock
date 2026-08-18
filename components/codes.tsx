@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import bwipjs from "bwip-js";
 import QRCode from "qrcode";
 import { Product } from "@/lib/types";
@@ -39,6 +39,57 @@ export function ProductCode({
   }, [product, qr]);
   return <canvas ref={canvas} className="mx-auto max-w-full" />;
 }
+
+type CodeSort =
+  | "az"
+  | "za"
+  | "newest"
+  | "oldest"
+  | "price-low"
+  | "price-high";
+
+function sortCodeProducts(products: Product[], sort: CodeSort) {
+  return [...products].sort((a, b) => {
+    if (sort === "az")
+      return a.name.localeCompare(b.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+    if (sort === "za")
+      return b.name.localeCompare(a.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+    if (sort === "newest")
+      return (
+        new Date(b.createdAt).getTime() -
+        new Date(a.createdAt).getTime()
+      );
+
+    if (sort === "oldest")
+      return (
+        new Date(a.createdAt).getTime() -
+        new Date(b.createdAt).getTime()
+      );
+
+    if (sort === "price-low") return a.price - b.price;
+
+    if (sort === "price-high") return b.price - a.price;
+
+    return 0;
+  });
+}
+
+function codeSortName(sort: CodeSort) {
+  if (sort === "az") return "A–Z";
+  if (sort === "za") return "Z–A";
+  if (sort === "newest") return "Newest first";
+  if (sort === "oldest") return "Oldest first";
+  if (sort === "price-low") return "Price low to high";
+  return "Price high to low";
+}
 export function CodeCatalogue({
   products,
   openBilling,
@@ -52,75 +103,340 @@ export function CodeCatalogue({
   const [selected, setSelected] = useState<string[]>(products.map((p) => p.id));
   const [mode, setMode] = useState<"barcode" | "qr">("barcode");
   const [perPage, setPerPage] = useState(16);
-  const createPdf = async (save = true) => {
+  const [sortBy, setSortBy] = useState<CodeSort>("az");
+
+const orderedProducts = useMemo(
+  () => sortCodeProducts(products, sortBy),
+  [products, sortBy],
+);
+    const createPdf = async (save = true) => {
     if (!canExport) {
       openBilling();
       return;
     }
-    const chosen = products.filter((p) => selected.includes(p.id));
-    const pdf = new jsPDF({ unit: "mm", format: "a4" });
-    const cols = Math.round(Math.sqrt(perPage)),
-      rows = Math.ceil(perPage / cols),
-      cellW = 190 / cols,
-      cellH = 242 / rows;
-    const decorate = () => {
-      pdf.setFillColor(8, 124, 85);
-      pdf.rect(0, 0, 210, 20, "F");
+
+    const chosen = sortCodeProducts(
+      products.filter((p) => selected.includes(p.id)),
+      sortBy,
+    );
+
+    const pdf = new jsPDF({
+      unit: "mm",
+      format: "a4",
+      compress: true,
+    });
+
+    const cols =
+      perPage === 4 ? 2 : perPage === 9 ? 3 : perPage === 16 ? 4 : 5;
+
+    const rows = Math.ceil(perPage / cols);
+    const gap = perPage <= 9 ? 4 : 2.6;
+
+    const left = 10;
+    const top = 54;
+    const usableW = 190;
+    const usableH = 222;
+
+    const cellW = (usableW - gap * (cols - 1)) / cols;
+    const cellH = (usableH - gap * (rows - 1)) / rows;
+
+    const deepEmerald = [6, 75, 58] as const;
+    const emerald = [8, 124, 85] as const;
+    const blue = [55, 126, 184] as const;
+    const ink = [24, 43, 36] as const;
+    const muted = [91, 108, 100] as const;
+
+    const businessLocation =
+      data.business.address || data.business.country || "";
+
+    const businessContact = [
+      businessLocation,
+      data.business.phone,
+      data.business.email,
+    ]
+      .filter(Boolean)
+      .join("  |  ");
+
+    const drawHeader = () => {
+      // Main premium header
+      pdf.setFillColor(...deepEmerald);
+      pdf.rect(0, 0, 210, 31, "F");
+
+      pdf.setFillColor(...emerald);
+      pdf.rect(154, 0, 56, 31, "F");
+
+      pdf.setFillColor(...blue);
+      pdf.rect(0, 31, 210, 2.5, "F");
+
+      // NileStock logo block
+      pdf.setFillColor(255, 255, 255);
+      pdf.roundedRect(14, 8, 12, 12, 2.5, 2.5, "F");
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...deepEmerald);
+      pdf.setFontSize(8);
+      pdf.text("NS", 20, 15.6, { align: "center" });
+
+      // Brand
       pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(13);
-      pdf.text(`${data.business.name} • Product Codes`, 10, 12);
-      pdf.setFontSize(7);
-      pdf.setTextColor(90, 105, 97);
+      pdf.setFontSize(14.5);
+      pdf.text("NileStock", 30, 13.5);
+
+      // Business name
+      pdf.setFontSize(8.5);
+      pdf.setFont("helvetica", "normal");
+
+      const businessName =
+        pdf.splitTextToSize(data.business.name, 100)[0] ||
+        data.business.name;
+
+      pdf.text(businessName, 30, 20.5);
+
+      // Contact / location
+      pdf.setTextColor(226, 244, 237);
+      pdf.setFontSize(6.8);
+
+      const contactLines = pdf
+        .splitTextToSize(businessContact || "nilestock.shop", 48)
+        .slice(0, 2);
+
+      pdf.text(contactLines, 196, 12.5, {
+        align: "right",
+      });
+
+      // Sheet title
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...ink);
+      pdf.setFontSize(16);
+      pdf.text("Product Code Sheet", 14, 43);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...muted);
+      pdf.setFontSize(7.3);
+
       pdf.text(
-        `${data.business.address || data.business.country} • ${data.business.phone || data.business.email || "Powered by NileStock"}`,
-        105,
-        291,
-        { align: "center" },
+        "Cut along the dashed borders • Scan before attaching labels",
+        14,
+        48.5,
+      );
+
+      pdf.text(
+        `Order: ${codeSortName(sortBy)} • Generated ${new Date().toLocaleDateString()}`,
+        196,
+        48.5,
+        { align: "right" },
       );
     };
-    decorate();
+
+    drawHeader();
+
     for (let i = 0; i < chosen.length; i++) {
       if (i && i % perPage === 0) {
         pdf.addPage();
-        decorate();
+        drawHeader();
       }
-      const p = chosen[i],
-        index = i % perPage,
-        col = index % cols,
-        row = Math.floor(index / cols),
-        x = 10 + col * cellW,
-        y = 25 + row * cellH;
-      pdf.setTextColor(20, 37, 30);
-      pdf.setFontSize(perPage <= 9 ? 11 : 8);
-      pdf.text(p.name, x, y);
-      pdf.setFontSize(perPage <= 9 ? 9 : 7);
-      pdf.text(`${money(p.price)}  •  ${p.sku}`, x, y + 5);
-      const c = document.createElement("canvas");
-      if (mode === "qr")
-        await QRCode.toCanvas(c, p.qr || p.barcode, { width: 260, margin: 2 });
-      else
-        bwipjs.toCanvas(c, {
+
+      const p = chosen[i];
+      const index = i % perPage;
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+
+      const x = left + col * (cellW + gap);
+      const y = top + row * (cellH + gap);
+
+      const cardW = cellW;
+      const cardH = cellH;
+
+      // Card background
+      pdf.setFillColor(251, 253, 252);
+      pdf.roundedRect(x, y, cardW, cardH, 2, 2, "F");
+
+      // Cutting border
+      pdf.setDrawColor(155, 171, 162);
+      pdf.setLineWidth(0.25);
+      pdf.setLineDashPattern([1.4, 1.2], 0);
+      pdf.roundedRect(x, y, cardW, cardH, 2, 2, "S");
+      pdf.setLineDashPattern([], 0);
+
+      // NileStock mark
+      pdf.setFillColor(...emerald);
+      pdf.roundedRect(x + 3, y + 3, 7, 6, 1.3, 1.3, "F");
+
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7);
+      pdf.text("N", x + 6.5, y + 7.2, {
+        align: "center",
+      });
+
+      // Product name
+      pdf.setTextColor(...ink);
+      pdf.setFont("helvetica", "bold");
+
+      pdf.setFontSize(
+        perPage <= 9 ? 10 : perPage === 16 ? 8 : 7,
+      );
+
+      const productLine =
+        pdf.splitTextToSize(
+          p.name,
+          Math.max(14, cardW - 16),
+        )[0] || p.name;
+
+      pdf.text(productLine, x + 12, y + 6.8);
+
+      // SKU
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(perPage <= 9 ? 8 : 6.5);
+      pdf.setTextColor(80, 95, 87);
+      pdf.text(p.sku, x + 3, y + 13);
+
+      // Price
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...emerald);
+
+      pdf.text(
+        money(p.price),
+        x + cardW - 3,
+        y + 13,
+        { align: "right" },
+      );
+
+      const canvas = document.createElement("canvas");
+
+      if (mode === "qr") {
+        await QRCode.toCanvas(
+          canvas,
+          p.qr || p.barcode,
+          {
+            width: 300,
+            margin: 1,
+          },
+        );
+      } else {
+        bwipjs.toCanvas(canvas, {
           bcid: "code128",
           text: p.barcode,
-          scale: 3,
+          scale: 4,
           height: 16,
           includetext: true,
+          textxalign: "center",
         });
+      }
+
+      const availableH = Math.max(14, cardH - 23);
+      const qrSize = Math.min(cardW - 10, availableH);
+
+      const barcodeH = Math.min(
+        perPage <= 9
+          ? 28
+          : perPage === 16
+            ? 21
+            : 16,
+        availableH,
+      );
+
       pdf.addImage(
-        c.toDataURL("image/png"),
+        canvas.toDataURL("image/png"),
         "PNG",
-        x + 2,
-        y + 8,
-        mode === "qr" ? Math.min(cellW - 8, cellH - 20) : cellW - 8,
         mode === "qr"
-          ? Math.min(cellW - 8, cellH - 20)
-          : Math.min(25, cellH - 20),
+          ? x + (cardW - qrSize) / 2
+          : x + 4,
+        y + 16,
+        mode === "qr"
+          ? qrSize
+          : cardW - 8,
+        mode === "qr"
+          ? qrSize
+          : barcodeH,
+      );
+
+      // Bottom separator
+      pdf.setDrawColor(223, 231, 226);
+      pdf.setLineWidth(0.2);
+
+      pdf.line(
+        x + 3,
+        y + cardH - 5,
+        x + cardW - 3,
+        y + cardH - 5,
+      );
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setFontSize(5.5);
+      pdf.setTextColor(112, 126, 118);
+
+      pdf.text(
+        "nilestock.shop",
+        x + 3,
+        y + cardH - 2.2,
+      );
+
+      pdf.text(
+        mode === "qr"
+          ? "QR label"
+          : "Barcode label",
+        x + cardW - 3,
+        y + cardH - 2.2,
+        { align: "right" },
       );
     }
+
+    // Premium footer on every PDF page
+    const pages = pdf.getNumberOfPages();
+
+    for (let pageNumber = 1; pageNumber <= pages; pageNumber++) {
+      pdf.setPage(pageNumber);
+
+      pdf.setDrawColor(214, 225, 219);
+      pdf.line(14, 283, 196, 283);
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...muted);
+      pdf.setFontSize(6.8);
+
+      const footerLeft = [
+        data.business.name,
+        data.business.phone,
+      ]
+        .filter(Boolean)
+        .join("  |  ");
+
+      pdf.text(
+        footerLeft,
+        14,
+        290,
+      );
+
+      pdf.setFont("helvetica", "bold");
+      pdf.setTextColor(...deepEmerald);
+
+      pdf.text(
+        "Powered by nilestock.shop",
+        105,
+        290,
+        { align: "center" },
+      );
+
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(...muted);
+
+      pdf.text(
+        `Page ${pageNumber} of ${pages}`,
+        196,
+        290,
+        { align: "right" },
+      );
+    }
+
     if (save) {
-      pdf.save(`${fileSafeName(data.business.name)}-product-codes.pdf`);
+      pdf.save(
+        `${fileSafeName(data.business.name)}-product-codes.pdf`,
+      );
+
       markDownloaded("catalogue");
     }
+
     return pdf;
   };
   const shareWhatsApp = async () => {
@@ -189,6 +505,7 @@ export function CodeCatalogue({
         <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
           Codes per A4 page
           <Select
+          
             className="h-9 w-40 border-0"
             value={perPage}
             onChange={(e) => setPerPage(+e.target.value)}
@@ -198,7 +515,25 @@ export function CodeCatalogue({
             <option value="16">16 — Standard</option>
             <option value="25">25 — Small</option>
           </Select>
+
         </label>
+        <label className="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 text-sm font-semibold">
+  Label order
+  <Select
+    className="h-9 w-40 border-0"
+    value={sortBy}
+    onChange={(e) =>
+      setSortBy(e.target.value as CodeSort)
+    }
+  >
+    <option value="az">A → Z</option>
+    <option value="za">Z → A</option>
+    <option value="newest">Newest first</option>
+    <option value="oldest">Oldest first</option>
+    <option value="price-low">Price: low → high</option>
+    <option value="price-high">Price: high → low</option>
+  </Select>
+</label>
         <Button
           variant={mode === "barcode" ? "primary" : "secondary"}
           onClick={() => setMode("barcode")}
@@ -237,7 +572,10 @@ export function CodeCatalogue({
           {canExport ? "Print labels" : "Lite • Print labels"}
         </Button>
       </div>
-      <div className="code-print grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div
+        className="code-print grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+        data-per-page={perPage}
+      >
         <div className="print-only col-span-full border-b pb-3 text-center">
           <b className="text-lg">{data.business.name} • Product Codes</b>
           <p className="text-xs">
@@ -247,47 +585,61 @@ export function CodeCatalogue({
               .join(" • ")}
           </p>
         </div>
-        {products.map((p) => (
-          <Card key={p.id} className="p-4">
-            <label className="mb-2 flex gap-2 text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={selected.includes(p.id)}
-                onChange={() =>
-                  setSelected((s) =>
-                    s.includes(p.id)
-                      ? s.filter((x) => x !== p.id)
-                      : [...s, p.id],
-                  )
-                }
-              />
-              {p.name}
-            </label>
-            <div className="rounded-lg bg-white p-3 text-black">
+        {orderedProducts.map((p) => (
+          <Card
+            key={p.id}
+            className="code-label overflow-hidden p-0"
+            data-selected={selected.includes(p.id) ? "true" : "false"}
+          >
+            <div className="code-label-top flex items-start gap-3 bg-emerald-950 px-3 py-2.5 text-white">
+              <div className="min-w-0 flex-1">
+                <b className="block truncate text-sm">{p.name}</b>
+                <span className="mt-0.5 block text-[10px] text-white/65">{p.sku}</span>
+              </div>
+              <label className="no-print mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white/10">
+                <input
+                  aria-label={`Select ${p.name}`}
+                  type="checkbox"
+                  checked={selected.includes(p.id)}
+                  onChange={() =>
+                    setSelected((s) =>
+                      s.includes(p.id)
+                        ? s.filter((x) => x !== p.id)
+                        : [...s, p.id],
+                    )
+                  }
+                />
+              </label>
+            </div>
+
+            <div className="code-label-body bg-white p-3 text-black">
               <ProductCode product={p} qr={mode === "qr"} />
-              <p className="mt-2 text-center text-xs">
-                {p.sku} • {money(p.price)}
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-black/10 pt-2 text-xs">
+                <span className="font-mono text-[10px] text-black/60">{p.sku}</span>
+                <b className="text-emerald-800">{money(p.price)}</b>
+              </div>
+              <p className="mt-1 text-center text-[9px] uppercase tracking-[.16em] text-black/35">
+                nilestock.shop
               </p>
             </div>
+
             <Button
               variant="ghost"
-              className="mt-2 w-full"
+              className="no-print m-2 mt-0 w-[calc(100%-1rem)]"
               onClick={() => {
                 if (!canExport) {
                   openBilling();
                   return;
                 }
                 const c = document.querySelectorAll("canvas")[
-                  products.indexOf(p)
+                  orderedProducts.indexOf(p)
                 ] as HTMLCanvasElement;
                 if (c)
-                  c.toBlob(
-                    (blob) => {
-                      if (!blob) return;
-                      download(`${p.sku}.png`, blob, "image/png");
-                      markDownloaded(p.id);
-                    },
-                  );
+                  c.toBlob((blob) => {
+                    if (!blob) return;
+                    download(`${p.sku}.png`, blob, "image/png");
+                    markDownloaded(p.id);
+                  });
               }}
               aria-live="polite"
             >

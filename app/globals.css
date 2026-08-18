@@ -76,6 +76,22 @@ button {
 .print-only {
   display: none;
 }
+
+.code-label {
+  border: 1px dashed #b9c5be !important;
+  border-radius: 14px !important;
+  box-shadow: 0 10px 28px rgba(18, 69, 48, 0.06);
+}
+
+.code-label-top {
+  background: linear-gradient(100deg, #07523d, #0d7a53) !important;
+}
+
+.code-label-body canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
 .receipt-print.receipt-paper-58mm { width: min(100%, 19rem); max-width: 19rem; }
 .receipt-print.receipt-paper-80mm { width: min(100%, 24rem); max-width: 24rem; }
 .receipt-print.receipt-paper-A4 { width: min(100%, 40rem); max-width: 40rem; }
@@ -162,10 +178,43 @@ button {
   .code-print {
     position: absolute !important;
     inset: 0 !important;
+    display: grid !important;
+    align-content: start !important;
+    gap: 2.5mm !important;
     background: #fff !important;
     color: #000 !important;
-    padding: 8mm !important;
+    padding: 6mm !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
+
+  .code-print[data-per-page="4"] { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .code-print[data-per-page="9"] { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .code-print[data-per-page="16"] { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .code-print[data-per-page="25"] { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+
+  .code-label {
+    display: block !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    overflow: hidden !important;
+    border: 0.35mm dashed #93a299 !important;
+    border-radius: 2.2mm !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  .code-label[data-selected="false"] { display: none !important; }
+
+  .code-label-top {
+    background: #f1f7f3 !important;
+    color: #13251c !important;
+    border-bottom: 0.25mm solid #dce8e1 !important;
+  }
+
+  .code-label-top span { color: #6d7d74 !important; }
+  .code-label-body { background: #fff !important; }
+  .code-label canvas { max-width: 100% !important; height: auto !important; }
   .print-only {
     display: block !important;
   }

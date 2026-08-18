@@ -1,14 +1,17 @@
 "use client";
 import React, {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AppData, CartItem, Expense, Product, Purchase, Sale } from "./types";
 import { demoData, now, uid } from "./utils";
 import { createReceiptNumber } from "./receipt-number";
+import { saveWorkspaceBackup } from "./workspace-backup";
 type Ctx = {
   data: AppData;
   setData: React.Dispatch<React.SetStateAction<AppData>>;
@@ -29,29 +32,62 @@ type Ctx = {
 const AppContext = createContext<Ctx | null>(null);
 const KEY = "nilestock.v3.clean";
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<AppData>(demoData());
+  const [data, setDataState] = useState<AppData>(demoData());
+  const dataRef = useRef(data);
   const [ready, setReady] = useState(false);
   const [role, setRole] = useState<"owner" | "manager" | "cashier">("owner");
+
+  const persistImmediately = useCallback((next: AppData) => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(KEY, JSON.stringify(next));
+      const businessId = localStorage.getItem("nilestock.cloud.businessId");
+      if (businessId) saveWorkspaceBackup(businessId, next);
+    } catch {
+      // React state remains authoritative if browser storage is unavailable.
+    }
+  }, []);
+
+  const commitData = useCallback<React.Dispatch<React.SetStateAction<AppData>>>(
+    (update) => {
+      const current = dataRef.current;
+      const next =
+        typeof update === "function"
+          ? (update as (previous: AppData) => AppData)(current)
+          : update;
+      dataRef.current = next;
+      persistImmediately(next);
+      setDataState(next);
+    },
+    [persistImmediately],
+  );
+
   useEffect(() => {
     try {
       const x = localStorage.getItem(KEY);
-      if (x) setData(JSON.parse(x));
+      if (x) {
+        const restored = JSON.parse(x) as AppData;
+        dataRef.current = restored;
+        setDataState(restored);
+      }
     } finally {
       setReady(true);
     }
   }, []);
+
   useEffect(() => {
-    if (ready) localStorage.setItem(KEY, JSON.stringify(data));
-  }, [data, ready]);
+    dataRef.current = data;
+    if (ready) persistImmediately(data);
+  }, [data, persistImmediately, ready]);
   const api = useMemo<Ctx>(
     () => ({
       data,
-      setData,
+      setData: commitData,
       ready,
       role,
       setRole,
       addProduct: (p) =>
-        setData((d) => {
+        commitData((d) => {
           const product = { ...p, id: uid(), createdAt: now() };
           return {
             ...d,
@@ -95,7 +131,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           status: "completed",
           synced: false,
         };
-        setData((d) => ({
+        commitData((d) => ({
           ...d,
           products: d.products.map((p) => {
             const line = s.items.find((i) => i.productId === p.id);
@@ -140,7 +176,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return sale;
       },
       addExpense: (e) =>
-        setData((d) => ({
+        commitData((d) => ({
           ...d,
           expenses: [{ ...e, id: uid() }, ...d.expenses],
           audit: [
@@ -155,7 +191,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           ],
         })),
       receivePurchase: (p) =>
-        setData((d) => {
+        commitData((d) => {
           const purchase = { ...p, id: uid() };
           return {
             ...d,
@@ -199,9 +235,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             ],
           };
         }),
-      reset: () => setData(demoData()),
+      reset: () => commitData(demoData()),
     }),
-    [data, ready, role],
+    [commitData, data, ready, role],
   );
   return <AppContext.Provider value={api}>{children}</AppContext.Provider>;
 }

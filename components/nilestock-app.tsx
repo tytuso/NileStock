@@ -359,10 +359,11 @@ export function NileStockApp({
               className="h-9 w-9 p-0"
               disabled={refreshing}
               aria-label="Refresh NileStock"
-              title="Refresh app"
+              title="Save & sync now"
               onClick={() => {
                 setRefreshing(true);
-                window.setTimeout(() => window.location.reload(), 150);
+                window.dispatchEvent(new CustomEvent("nilestock:sync-now"));
+                window.setTimeout(() => setRefreshing(false), 900);
               }}
             >
               <RefreshCw size={18} className={refreshing ? "animate-spin" : ""} />
@@ -633,7 +634,8 @@ function Products({ go }: { go: (p: Page) => void }) {
   const { markDownloaded, labelFor } = useDownloadFeedback();
   const [open, setOpen] = useState(false),
     [q, setQ] = useState(""),
-    [limitOpen, setLimitOpen] = useState(false);
+    [limitOpen, setLimitOpen] = useState(false),
+    [savedNotice, setSavedNotice] = useState("");
   const limit = productLimit(data.business.plan);
   const atLimit = limit !== null && data.products.length >= limit;
   const nextPlanId = data.business.plan === "free" ? "starter" : "business";
@@ -666,6 +668,8 @@ function Products({ go }: { go: (p: Page) => void }) {
       taxable: false,
       active: true,
     });
+    setSavedNotice(`${name} saved safely to inventory • syncing automatically`);
+    window.setTimeout(() => setSavedNotice(""), 3200);
     setOpen(false);
   };
   const list = data.products.filter((p) =>
@@ -726,6 +730,11 @@ function Products({ go }: { go: (p: Page) => void }) {
           <Download size={16} /> {canExportProducts ? labelFor("products", "Export CSV") : "Business • Export CSV"}
         </Button>
       </div>
+      {savedNotice && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/45 dark:text-emerald-100">
+          <Check size={16} /> {savedNotice}
+        </div>
+      )}
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="bg-black/[.025] text-xs text-muted dark:bg-white/[.03]">
@@ -854,7 +863,9 @@ function Products({ go }: { go: (p: Page) => void }) {
           <Field label="Description">
             <Textarea name="description" />
           </Field>
-          <Button type="submit">Create product & opening stock</Button>
+          <Button type="submit">
+            <Check size={16} /> Save product to inventory
+          </Button>
         </form>
       </Modal>
       <Modal
@@ -1109,7 +1120,8 @@ function Inventory() {
     [stocktake, setStocktake] = useState(false),
     [adjustMode, setAdjustMode] = useState<"add" | "remove">("add"),
     [adjustQty, setAdjustQty] = useState(1),
-    [q, setQ] = useState("");
+    [q, setQ] = useState(""),
+    [savedNotice, setSavedNotice] = useState("");
   const value = data.products.reduce((s, p) => s + p.stock * p.cost, 0);
   const query = q.trim().toLowerCase();
   const inventoryProducts = data.products.filter((product) =>
@@ -1144,6 +1156,11 @@ function Inventory() {
           v={String(data.products.reduce((s, p) => s + p.stock, 0))}
         />
       </div>
+      {savedNotice && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/45 dark:text-emerald-100">
+          <Check size={16} /> {savedNotice}
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2">
         <Input
           className="min-w-[240px] flex-1"
@@ -1303,6 +1320,14 @@ function Inventory() {
                 ...d.audit,
               ],
             }));
+            setSavedNotice(
+              `${adjust.name} stock saved • new quantity ${
+                adjustMode === "add"
+                  ? adjust.stock + requested
+                  : Math.max(0, adjust.stock - requested)
+              }`,
+            );
+            window.setTimeout(() => setSavedNotice(""), 3200);
             setAdjust(null);
           }}
           className="grid gap-4"
@@ -1391,9 +1416,7 @@ function Inventory() {
             type="submit"
             disabled={adjustMode === "remove" && !adjust?.stock}
           >
-            {adjustMode === "add"
-              ? "Add to inventory"
-              : "Remove from inventory"}
+            <Check size={16} /> Save stock update
           </Button>
         </form>
       </Modal>
@@ -1433,6 +1456,8 @@ function Inventory() {
                 ],
               };
             });
+            setSavedNotice("Stocktake saved safely • syncing automatically");
+            window.setTimeout(() => setSavedNotice(""), 3200);
             setStocktake(false);
           }}
           className="space-y-2"

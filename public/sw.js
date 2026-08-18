@@ -1,5 +1,5 @@
-const SHELL_CACHE = "nilestock-shell-v10-3-1";
-const STATIC_CACHE = "nilestock-static-v10-3-1";
+const SHELL_CACHE = "nilestock-shell-v10-3-2";
+const STATIC_CACHE = "nilestock-static-v10-3-2";
 const CORE = [
   "/",
   "/manifest.webmanifest",

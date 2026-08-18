@@ -175,7 +175,49 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <script
           dangerouslySetInnerHTML={{
-            __html: `if('serviceWorker' in navigator){addEventListener('load',()=>navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{}))}`,
+            __html: `
+            if ('serviceWorker' in navigator) {
+              addEventListener('load', () => {
+                const localDev =
+                  location.hostname === 'localhost' ||
+                  location.hostname === '127.0.0.1' ||
+                  location.hostname === '[::1]';
+
+                if (localDev) {
+                  navigator.serviceWorker
+                    .getRegistrations()
+                    .then((registrations) =>
+                      Promise.all(
+                        registrations.map((registration) =>
+                          registration.unregister(),
+                        ),
+                      ),
+                    )
+                    .catch(() => {});
+
+                  if ('caches' in window) {
+                    caches
+                      .keys()
+                      .then((keys) =>
+                        Promise.all(
+                          keys
+                            .filter((key) => key.startsWith('nilestock-'))
+                            .map((key) => caches.delete(key)),
+                        ),
+                      )
+                      .catch(() => {});
+                  }
+
+                  return;
+                }
+
+                navigator.serviceWorker
+                  .register('/sw.js', { updateViaCache: 'none' })
+                  .then((registration) => registration.update())
+                  .catch(() => {});
+              });
+            }
+          `,
           }}
         />
       </body>
