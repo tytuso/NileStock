@@ -2570,7 +2570,7 @@ function AuditView() {
   );
 }
 function SettingsView() {
-  const { data, setData, reset, role } = useApp();
+  const { data, setData, role } = useApp();
   return (
     <div className="mx-auto max-w-3xl">
       <Card className="p-5">
@@ -2703,19 +2703,6 @@ function SettingsView() {
           </div>
           <Button disabled={!can(role, "settings")}>Save settings</Button>
         </form>
-      </Card>
-      <Card className="mt-4 border-red-200 p-5">
-        <h2 className="font-semibold text-red-700">Local data</h2>
-        <p className="my-2 text-sm text-muted">
-          Permanently clear the business information saved in this browser and
-          return to an empty account.
-        </p>
-        <Button
-          variant="danger"
-          onClick={() => confirm("Reset all local demo data?") && reset()}
-        >
-          Clear local business data
-        </Button>
       </Card>
     </div>
   );
