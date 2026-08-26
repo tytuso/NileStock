@@ -101,7 +101,7 @@ describe("Pro access", () => {
     expect(PLAN_DEFINITIONS.business.price).toBe(49_500);
     expect(PLAN_DEFINITIONS.pro.price).toBe(99_500);
     expect(productLimit("free")).toBe(10);
-    expect(productLimit("starter")).toBe(100);
+    expect(productLimit("starter")).toBe(400);
     expect(productLimit("business")).toBeNull();
   });
 

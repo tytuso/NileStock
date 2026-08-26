@@ -1335,7 +1335,7 @@ export function Entry() {
                 9500,
                 "For micro and small shops",
                 [
-                  "Up to 100 products",
+                  "Up to 400 products",
                   "Barcode and QR downloads",
                   "WhatsApp receipts",
                 ],

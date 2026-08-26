@@ -37,7 +37,7 @@ export const PLAN_DEFINITIONS: Record<
     summary: "A low-cost daily POS with more products, codes and customer-ready receipts.",
     features: [
       "Everything in Free",
-      "Up to 100 products",
+      "Up to 400 products",
       "Barcode and QR downloads",
       "WhatsApp receipt sharing",
       "Automatic cloud sync when back online",
@@ -85,7 +85,7 @@ export const hasMinimumPlan = (plan: PlanId, minimum: PlanId) =>
 
 export const productLimit = (plan: PlanId): number | null => {
   if (plan === "free") return 10;
-  if (plan === "starter") return 100;
+  if (plan === "starter") return 400;
   return null;
 };
 
@@ -98,7 +98,7 @@ export const receiptHistoryLimit = (plan: PlanId) => {
 export const PLAN_ACCESS = [
   { label: "Core POS, receipts and offline selling", minimum: "free" as PlanId },
   { label: "Readable live reports", minimum: "free" as PlanId },
-  { label: "Up to 100 products and code printing", minimum: "starter" as PlanId },
+  { label: "Up to 400 products and code printing", minimum: "starter" as PlanId },
   { label: "Unlimited products", minimum: "business" as PlanId },
   { label: "Staff, shifts, suppliers and credit", minimum: "business" as PlanId },
   { label: "CSV and branded PDF report exports", minimum: "business" as PlanId },
