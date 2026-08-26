@@ -37,6 +37,7 @@ import { isRepeatedSignup } from "@/lib/auth-account";
 import { resolveNileStockAuthRedirect } from "@/lib/auth-redirect";
 import {
   isAppData,
+  mergeWorkspaceChanges,
   parseLegacyWorkspace,
   parseWorkspaceBackup,
   saveWorkspaceBackup,
@@ -134,7 +135,9 @@ export function Entry() {
     hydratedUser = useRef<string | null>(null),
     hydratingUser = useRef<string | null>(null),
     lastUploadedSales = useRef(""),
-    offlineBaseline = useRef("");
+    offlineBaseline = useRef(""),
+    workspaceRevision = useRef<number | null>(null),
+    workspaceBaseline = useRef<AppData | null>(null);
   useLayoutEffect(() => {
     if (session === null) document.documentElement.classList.remove("dark");
   }, [session]);
@@ -316,7 +319,7 @@ export function Entry() {
               .single(),
             supabase
               .from("nilestock_workspace_data")
-              .select("payload,updated_at")
+              .select("payload,revision,updated_at")
               .eq("business_id", businessId)
               .maybeSingle(),
             supabase
@@ -378,11 +381,27 @@ export function Entry() {
           setSession(null);
           return;
         }
-        const selected = selectNewestWorkspace({
+        const cloudRevision = Number(workspaceResult.data?.revision || 0);
+        let selected = selectNewestWorkspace({
           cloudPayload: workspaceResult.data?.payload,
           cloudUpdatedAt: workspaceResult.data?.updated_at,
+          cloudRevision,
           localBackup,
         });
+        if (
+          cloudWorkspace &&
+          localBackup?.basePayload &&
+          typeof localBackup.cloudRevision === "number" &&
+          localBackup.cloudRevision < cloudRevision
+        )
+          selected = {
+            payload: mergeWorkspaceChanges(
+              localBackup.basePayload,
+              localBackup.payload,
+              cloudWorkspace,
+            ),
+            source: "local",
+          };
         let workspace: AppData;
         if (selected.payload) workspace = selected.payload;
         else {
@@ -415,6 +434,17 @@ export function Entry() {
             plan: businessResult.data.plan as AppData["business"]["plan"],
           },
         };
+        const cloudBaseline = cloudWorkspace
+          ? {
+              ...cloudWorkspace,
+              business: {
+                ...cloudWorkspace.business,
+                name: businessResult.data.name,
+                email: cloudWorkspace.business.email || email,
+                plan: businessResult.data.plan as AppData["business"]["plan"],
+              },
+            }
+          : workspace;
         if (salesResult.error)
           console.error(
             "NileStock could not download cross-device sales. Apply the v10.2.4 Supabase migration, then retry.",
@@ -442,6 +472,14 @@ export function Entry() {
         }
         lastUploadedSales.current = "";
         offlineBaseline.current = "";
+        workspaceRevision.current = cloudRevision;
+        workspaceBaseline.current = cloudBaseline;
+        saveWorkspaceBackup(
+          String(businessId),
+          workspace,
+          cloudRevision,
+          cloudBaseline,
+        );
         setData(workspace);
         setRole(memberResult.data.role as "owner" | "manager" | "cashier");
         const cloudSession: Session = {
@@ -524,6 +562,39 @@ export function Entry() {
     const timer = window.setTimeout(() => window.location.reload(), delay);
     return () => window.clearTimeout(timer);
   }, [session?.lastVerifiedPlan, session?.offlineLeaseExpiresAt]);
+  const pullCloudWorkspace = useCallback(async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !cloudReady || !session?.cloud || !session.businessId)
+      return;
+    const result = await supabase
+      .from("nilestock_workspace_data")
+      .select("payload,revision")
+      .eq("business_id", session.businessId)
+      .maybeSingle();
+    if (result.error || !isAppData(result.data?.payload)) {
+      if (result.error)
+        console.error(
+          "NileStock could not refresh the shared workspace; the local copy remains safe.",
+          result.error,
+        );
+      return;
+    }
+
+    const revision = Number(result.data.revision || 0);
+    if (
+      workspaceRevision.current !== null &&
+      revision <= workspaceRevision.current
+    )
+      return;
+    const remote = result.data.payload;
+    setData((current) => {
+      const base = workspaceBaseline.current;
+      workspaceRevision.current = revision;
+      workspaceBaseline.current = remote;
+      return base ? mergeWorkspaceChanges(base, current, remote) : remote;
+    });
+  }, [cloudReady, session?.businessId, session?.cloud, setData]);
+
   useEffect(() => {
     if (session?.businessId) {
       const fingerprint = JSON.stringify(data);
@@ -533,43 +604,66 @@ export function Entry() {
           session.offlineRestricted && session.lastVerifiedPlan
             ? { ...data, business: { ...data.business, plan: session.lastVerifiedPlan } }
             : data;
-        saveWorkspaceBackup(session.businessId, backupData);
+        saveWorkspaceBackup(
+          session.businessId,
+          backupData,
+          workspaceRevision.current,
+          workspaceBaseline.current,
+        );
         if (offline) offlineBaseline.current = fingerprint;
       }
     }
     const supabase = getSupabaseBrowserClient();
+    const baseline = workspaceBaseline.current;
+    const expectedRevision = workspaceRevision.current;
     if (
       !supabase ||
       !cloudReady ||
       !session?.cloud ||
       !session.businessId ||
-      !session.userId ||
-      !navigator.onLine
+      !navigator.onLine ||
+      !baseline ||
+      expectedRevision === null ||
+      JSON.stringify(data) === JSON.stringify(baseline)
     )
       return;
+
+    const payload = data;
     const timeout = setTimeout(() => {
-      const updatedAt = new Date().toISOString();
-      void Promise.all([
-        supabase.from("nilestock_workspace_data").upsert({
-          business_id: session.businessId,
-          payload: data,
-          updated_by: session.userId,
-          updated_at: updatedAt,
-        }),
-        supabase
-          .from("nilestock_businesses")
-          .update({ name: data.business.name, updated_at: updatedAt })
-          .eq("id", session.businessId),
-      ]).then(([workspaceResult, businessResult]) => {
-        if (workspaceResult.error || businessResult.error)
+      void (async () => {
+        const result = await supabase.rpc("nilestock_save_workspace", {
+          p_business_id: session.businessId,
+          p_payload: payload,
+          p_expected_revision: expectedRevision,
+        });
+        const saved = Array.isArray(result.data)
+          ? (result.data[0] as { revision?: number } | undefined)
+          : undefined;
+        if (!result.error && typeof saved?.revision === "number") {
+          workspaceRevision.current = saved.revision;
+          workspaceBaseline.current = payload;
+          void supabase
+            .from("nilestock_businesses")
+            .update({
+              name: payload.business.name,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", session.businessId);
+          return;
+        }
+        if (result.error)
           console.error(
-            "NileStock cloud sync failed; the local workspace backup remains safe.",
-            workspaceResult.error || businessResult.error,
+            "NileStock workspace sync was retried after a newer cloud change.",
+            result.error,
           );
-      });
+        // A conflict never overwrites the cloud snapshot. Pulling performs a
+        // three-way merge and only retries independent local changes.
+        workspaceRevision.current = null;
+        await pullCloudWorkspace();
+      })();
     }, 700);
     return () => clearTimeout(timeout);
-  }, [cloudReady, data, session, syncPulse]);
+  }, [cloudReady, data, pullCloudWorkspace, session, syncPulse]);
   const pullCloudSales = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (
@@ -600,13 +694,36 @@ export function Entry() {
   }, [cloudReady, session?.businessId, session?.cloud, setData]);
 
   useEffect(() => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase || !cloudReady || !session?.cloud || !session.businessId)
+      return;
+    const channel = supabase
+      .channel(`nilestock-workspace-${session.businessId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "nilestock_workspace_data",
+          filter: `business_id=eq.${session.businessId}`,
+        },
+        () => void pullCloudWorkspace(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [cloudReady, pullCloudWorkspace, session?.businessId, session?.cloud]);
+
+  useEffect(() => {
     const syncNow = () => {
       setSyncPulse((current) => current + 1);
+      void pullCloudWorkspace();
       void pullCloudSales();
     };
     addEventListener("nilestock:sync-now", syncNow);
     return () => removeEventListener("nilestock:sync-now", syncNow);
-  }, [pullCloudSales]);
+  }, [pullCloudSales, pullCloudWorkspace]);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -664,6 +781,7 @@ export function Entry() {
     if (!cloudReady || !session?.cloud) return;
     const refresh = () => {
       setSyncPulse((current) => current + 1);
+      void pullCloudWorkspace();
       void pullCloudSales();
     };
     const refreshVisible = () => {
@@ -677,7 +795,7 @@ export function Entry() {
       removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refreshVisible);
     };
-  }, [cloudReady, pullCloudSales, session?.cloud]);
+  }, [cloudReady, pullCloudSales, pullCloudWorkspace, session?.cloud]);
   useEffect(() => {
     if (!menu) return;
     const closeOutside = (event: PointerEvent) => {
@@ -859,12 +977,13 @@ export function Entry() {
       if (supabase) {
         const updatedAt = new Date().toISOString();
         const saves: PromiseLike<unknown>[] = [
-          supabase.from("nilestock_workspace_data").upsert({
-            business_id: session.businessId,
-            payload: data,
-            updated_by: session.userId,
-            updated_at: updatedAt,
-          }),
+          workspaceRevision.current === null
+            ? Promise.resolve()
+            : supabase.rpc("nilestock_save_workspace", {
+                p_business_id: session.businessId,
+                p_payload: data,
+                p_expected_revision: workspaceRevision.current,
+              }),
           supabase
             .from("nilestock_businesses")
             .update({ name: data.business.name, updated_at: updatedAt })
