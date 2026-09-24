@@ -642,6 +642,9 @@ function Products({ go }: { go: (p: Page) => void }) {
     [savedNotice, setSavedNotice] = useState(""),
     [editProduct, setEditProduct] = useState<Product | null>(null),
     [duplicateProduct, setDuplicateProduct] = useState<Product | null>(null),
+    [productFilter, setProductFilter] = useState<
+      "all" | "active" | "archived" | "low-stock"
+    >("all"),
     [barcode, setBarcode] = useState(""),
     [formError, setFormError] = useState(""),
     [scanOpen, setScanOpen] = useState(false);
@@ -800,11 +803,26 @@ function Products({ go }: { go: (p: Page) => void }) {
     setFormError("");
     setOpen(true);
   }, [atLimit]);
-  const list = data.products.filter((p) =>
-    [p.name, p.sku, p.barcode, p.category].some((value) =>
-      value.toLowerCase().includes(q.trim().toLowerCase()),
-    ),
-  );
+  const filterCounts = {
+    all: data.products.length,
+    active: data.products.filter((p) => p.active).length,
+    archived: data.products.filter((p) => !p.active).length,
+    "low-stock": data.products.filter((p) => p.stock <= p.reorder).length,
+  };
+  const list = data.products.filter((p) => {
+    const matchesFilter =
+      productFilter === "all" ||
+      (productFilter === "active" && p.active) ||
+      (productFilter === "archived" && !p.active) ||
+      (productFilter === "low-stock" && p.stock <= p.reorder);
+    const query = q.trim().toLowerCase();
+    const matchesSearch =
+      !query ||
+      [p.name, p.sku, p.barcode, p.category].some((value) =>
+        value.toLowerCase().includes(query),
+      );
+    return matchesFilter && matchesSearch;
+  });
   const canExportProducts = hasMinimumPlan(data.business.plan, "business");
   const exportProducts = () => {
     if (!canExportProducts) {
@@ -873,6 +891,38 @@ function Products({ go }: { go: (p: Page) => void }) {
           {!canExportProducts && <Lock size={14} />}
           <Download size={16} /> {canExportProducts ? labelFor("products", "Export CSV") : "Business • Export CSV"}
         </Button>
+      </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        {(
+          [
+            ["all", "All"],
+            ["active", "Active"],
+            ["archived", "Archived"],
+            ["low-stock", "Low stock"],
+          ] as const
+        ).map(([value, label]) => (
+          <Button
+            key={value}
+            type="button"
+            variant={productFilter === value ? "primary" : "secondary"}
+            onClick={() => setProductFilter(value)}
+            className="h-9"
+          >
+            {label}
+            <span
+              className={
+                productFilter === value
+                  ? "ml-1 rounded-full bg-white/20 px-1.5 py-0.5 text-[10px] text-current"
+                  : "ml-1 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] text-muted dark:bg-white/10"
+              }
+            >
+              {filterCounts[value]}
+            </span>
+          </Button>
+        ))}
+        <span className="ml-auto text-xs text-muted">
+          Showing {list.length} product{list.length === 1 ? "" : "s"}
+        </span>
       </div>
       {savedNotice && (
         <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/45 dark:text-emerald-100">
@@ -971,12 +1021,24 @@ function Products({ go }: { go: (p: Page) => void }) {
           <Empty
             title={
               data.products.length
-                ? "No products match your search"
+                ? productFilter === "low-stock"
+                  ? "No low-stock products"
+                  : productFilter === "archived"
+                    ? "No archived products"
+                    : productFilter === "active"
+                      ? "No active products"
+                      : "No products match your search"
                 : "Your product catalogue is empty"
             }
             copy={
               data.products.length
-                ? "Try a different name or code."
+                ? productFilter === "low-stock"
+                  ? "Products at or below their stock alert level will appear here."
+                  : productFilter === "archived"
+                    ? "Archived products will appear here."
+                    : productFilter === "active"
+                      ? "Active products will appear here."
+                      : "Try a different name or code."
                 : "Add your first product, opening stock and barcode to begin selling."
             }
             action={
