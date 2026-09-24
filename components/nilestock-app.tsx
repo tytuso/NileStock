@@ -1035,7 +1035,11 @@ function Products({ go }: { go: (p: Page) => void }) {
               <Input
                 name="reorder"
                 type="number"
-                defaultValue={data.business.lowStockThreshold || 2}
+                defaultValue={
+                  duplicateProduct?.reorder ??
+                  data.business.lowStockThreshold ??
+                  2
+                }
                 min="0"
               />
             </Field>
