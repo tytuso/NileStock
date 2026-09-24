@@ -709,6 +709,19 @@ function Products({ go }: { go: (p: Page) => void }) {
     setOpen(true);
     return true;
   }, []);
+
+  useEffect(() => {
+    const pendingBarcode = sessionStorage.getItem("nilestock.pending-product-barcode");
+    if (!pendingBarcode) return;
+    sessionStorage.removeItem("nilestock.pending-product-barcode");
+    if (atLimit) {
+      setLimitOpen(true);
+      return;
+    }
+    setBarcode(pendingBarcode);
+    setFormError("");
+    setOpen(true);
+  }, [atLimit]);
   const list = data.products.filter((p) =>
     [p.name, p.sku, p.barcode, p.category].some((value) =>
       value.toLowerCase().includes(q.trim().toLowerCase()),
@@ -988,7 +1001,19 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
   const remaining = limit === null ? null : Math.max(0, limit - data.products.length);
   const [rows, setRows] = useState<Record<string, string>[]>([]),
     [error, setError] = useState(""),
-    [dragging, setDragging] = useState(false);
+    [dragging, setDragging] = useState(false),
+    [scanOpen, setScanOpen] = useState(false);
+  const acceptScannedBarcode = useCallback(
+    (rawCode: string) => {
+      const value = rawCode.trim();
+      if (!value) return false;
+      sessionStorage.setItem("nilestock.pending-product-barcode", value);
+      setScanOpen(false);
+      go("Products");
+      return true;
+    },
+    [go],
+  );
   const read = async (file?: File) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".csv")) {
@@ -1073,6 +1098,29 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
           <b className="text-white">selling_price</b> are required; every other
           field is optional.
         </p>
+        <div className="mt-5 flex flex-wrap gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              if (remaining === 0) return;
+              setScanOpen(true);
+            }}
+            className="border-white/20 bg-white text-emerald-950 hover:bg-white/90"
+          >
+            <Camera size={17} /> Scan barcode to add product
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => go("Products")}
+            className="text-white hover:bg-white/10 hover:text-white"
+          >
+            Add product manually
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-white/55">
+          Scan the barcode already printed on the physical product. NileStock
+          will open Add Product with that barcode filled in.
+        </p>
       </div>
       <div className="grid gap-4 lg:grid-cols-[1.2fr_.8fr]">
         <Card className="p-6">
@@ -1153,6 +1201,11 @@ function ImportProducts({ go }: { go: (p: Page) => void }) {
           </Button>
         </Card>
       </div>
+      <BarcodeScanner
+        open={scanOpen}
+        close={() => setScanOpen(false)}
+        onCode={acceptScannedBarcode}
+      />
       {rows.length > 0 && (
         <Card className="overflow-hidden">
           <div className="flex items-center justify-between border-b border-line p-4">
