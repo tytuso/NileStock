@@ -706,6 +706,7 @@ function Products({ go }: { go: (p: Page) => void }) {
     setBarcode(value);
     setFormError("");
     setScanOpen(false);
+    setOpen(true);
     return true;
   }, []);
   const list = data.products.filter((p) =>
@@ -752,6 +753,21 @@ function Products({ go }: { go: (p: Page) => void }) {
           onClick={openAddProduct}
         >
           <Plus size={16} /> Add product
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            if (atLimit) {
+              setLimitOpen(true);
+              return;
+            }
+            setBarcode("");
+            setFormError("");
+            setOpen(false);
+            setScanOpen(true);
+          }}
+        >
+          <Camera size={16} /> Scan & add product
         </Button>
         <Button variant="secondary" onClick={() => go("Import Products")}>
           <Upload size={16} /> Import products
