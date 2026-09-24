@@ -13,6 +13,7 @@ import {
   ClipboardCheck,
   CircleDollarSign,
   CreditCard,
+  Copy,
   Crown,
   Download,
   FileText,
@@ -640,6 +641,7 @@ function Products({ go }: { go: (p: Page) => void }) {
     [limitOpen, setLimitOpen] = useState(false),
     [savedNotice, setSavedNotice] = useState(""),
     [editProduct, setEditProduct] = useState<Product | null>(null),
+    [duplicateProduct, setDuplicateProduct] = useState<Product | null>(null),
     [barcode, setBarcode] = useState(""),
     [formError, setFormError] = useState(""),
     [scanOpen, setScanOpen] = useState(false);
@@ -688,9 +690,10 @@ function Products({ go }: { go: (p: Page) => void }) {
       taxable: false,
       active: true,
     });
-    setSavedNotice(`${name} saved safely to inventory • syncing automatically`);
+    setSavedNotice(duplicateProduct ? `${name} duplicated successfully • syncing automatically` : `${name} saved safely to inventory • syncing automatically`);
     window.setTimeout(() => setSavedNotice(""), 3200);
     setOpen(false);
+    setDuplicateProduct(null);
   };
   const saveEdit = (fd: FormData) => {
     if (!editProduct) return;
@@ -756,6 +759,20 @@ function Products({ go }: { go: (p: Page) => void }) {
       setLimitOpen(true);
       return;
     }
+    setDuplicateProduct(null);
+    setBarcode("");
+    setFormError("");
+    setScanOpen(false);
+    setOpen(true);
+  };
+
+  const openDuplicateProduct = (product: Product) => {
+    if (atLimit) {
+      setLimitOpen(true);
+      return;
+    }
+    setEditProduct(null);
+    setDuplicateProduct(product);
     setBarcode("");
     setFormError("");
     setScanOpen(false);
@@ -835,6 +852,7 @@ function Products({ go }: { go: (p: Page) => void }) {
               setLimitOpen(true);
               return;
             }
+            setDuplicateProduct(null);
             setBarcode("");
             setFormError("");
             setOpen(false);
@@ -909,6 +927,15 @@ function Products({ go }: { go: (p: Page) => void }) {
                     <Button
                       variant="ghost"
                       disabled={!can(role, "inventory")}
+                      onClick={() => openDuplicateProduct(p)}
+                      aria-label={"Duplicate " + p.name}
+                      title="Duplicate product"
+                    >
+                      <Copy size={15} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={!can(role, "inventory")}
                       onClick={() => {
                         setFormError("");
                         setEditProduct(p);
@@ -960,20 +987,49 @@ function Products({ go }: { go: (p: Page) => void }) {
           />
         )}
       </Card>
-      <Modal open={open} onClose={() => setOpen(false)} title="Add product">
+      <Modal
+        open={open}
+        onClose={() => {
+          setOpen(false);
+          setDuplicateProduct(null);
+        }}
+        title={duplicateProduct ? "Duplicate product" : "Add product"}
+      >
         <form action={save} className="grid gap-4">
           <Field label="Product name">
-            <Input name="name" required />
+            <Input
+              name="name"
+              defaultValue={
+                duplicateProduct ? duplicateProduct.name + " (Copy)" : undefined
+              }
+              required
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Selling price">
-              <Input name="price" type="number" min="0" required />
+              <Input
+                name="price"
+                type="number"
+                min="0"
+                defaultValue={duplicateProduct?.price}
+                required
+              />
             </Field>
             <Field label="Cost price (optional)">
-              <Input name="cost" type="number" min="0" />
+              <Input
+                name="cost"
+                type="number"
+                min="0"
+                defaultValue={duplicateProduct?.cost}
+              />
             </Field>
             <Field label="Opening stock (optional)">
-              <Input name="stock" type="number" min="0" />
+              <Input
+                name="stock"
+                type="number"
+                min="0"
+                defaultValue={duplicateProduct ? 0 : undefined}
+              />
             </Field>
             <Field label="Stock alert level (optional)">
               <Input
@@ -984,10 +1040,16 @@ function Products({ go }: { go: (p: Page) => void }) {
               />
             </Field>
             <Field label="Category">
-              <Input name="category" defaultValue="General" />
+              <Input
+                name="category"
+                defaultValue={duplicateProduct?.category || "General"}
+              />
             </Field>
             <Field label="Unit">
-              <Select name="unit">
+              <Select
+                name="unit"
+                defaultValue={duplicateProduct?.unit || "piece"}
+              >
                 <option>piece</option>
                 <option>kg</option>
                 <option>litre</option>
@@ -1030,7 +1092,10 @@ function Products({ go }: { go: (p: Page) => void }) {
             </Field>
           </div>
           <Field label="Description">
-            <Textarea name="description" />
+            <Textarea
+              name="description"
+              defaultValue={duplicateProduct?.description || ""}
+            />
           </Field>
           {formError && (
             <p
