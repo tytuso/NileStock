@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgePercent,
-Minus,
+  Minus,
   Plus,
   Search,
   ShoppingCart,
