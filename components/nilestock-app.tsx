@@ -27,6 +27,7 @@ import {
   ReceiptText,
   RefreshCw,
   Search,
+  ScanBarcode,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -70,6 +71,7 @@ import {
   Textarea,
 } from "./ui";
 import { POS } from "./pos";
+import { BarcodeScanner } from "./barcode-scanner";
 import { CodeCatalogue } from "./codes";
 import { Receipt } from "./receipt";
 import {
@@ -635,7 +637,10 @@ function Products({ go }: { go: (p: Page) => void }) {
   const [open, setOpen] = useState(false),
     [q, setQ] = useState(""),
     [limitOpen, setLimitOpen] = useState(false),
-    [savedNotice, setSavedNotice] = useState("");
+    [savedNotice, setSavedNotice] = useState(""),
+    [barcode, setBarcode] = useState(""),
+    [formError, setFormError] = useState(""),
+    [scanOpen, setScanOpen] = useState(false);
   const limit = productLimit(data.business.plan);
   const atLimit = limit !== null && data.products.length >= limit;
   const nextPlanId = data.business.plan === "free" ? "starter" : "business";
@@ -650,7 +655,20 @@ function Products({ go }: { go: (p: Page) => void }) {
       sku = String(fd.get("sku") || `NS-${Date.now().toString().slice(-6)}`),
       code = String(
         fd.get("barcode") || `24${Date.now().toString().slice(-10)}`,
+      ).trim(),
+      duplicate = code
+        ? data.products.find(
+            (product) =>
+              product.barcode.trim().toLowerCase() === code.toLowerCase(),
+          )
+        : undefined;
+    if (duplicate) {
+      setFormError(
+        `Barcode ${code} is already assigned to ${duplicate.name}. Scan a different barcode or leave the field blank for an automatic NileStock code.`,
       );
+      return;
+    }
+    setFormError("");
     addProduct({
       name,
       description: String(fd.get("description") || ""),
@@ -671,6 +689,16 @@ function Products({ go }: { go: (p: Page) => void }) {
     setSavedNotice(`${name} saved safely to inventory • syncing automatically`);
     window.setTimeout(() => setSavedNotice(""), 3200);
     setOpen(false);
+  };
+  const openAddProduct = () => {
+    if (atLimit) {
+      setLimitOpen(true);
+      return;
+    }
+    setBarcode("");
+    setFormError("");
+    setScanOpen(false);
+    setOpen(true);
   };
   const list = data.products.filter((p) =>
     [p.name, p.sku, p.barcode, p.category].some((value) =>
@@ -713,7 +741,7 @@ function Products({ go }: { go: (p: Page) => void }) {
           onChange={(e) => setQ(e.target.value)}
         />
         <Button
-          onClick={() => (atLimit ? setLimitOpen(true) : setOpen(true))}
+          onClick={openAddProduct}
         >
           <Plus size={16} /> Add product
         </Button>
@@ -812,7 +840,7 @@ function Products({ go }: { go: (p: Page) => void }) {
             }
             action={
               !data.products.length ? (
-                <Button onClick={() => setOpen(true)}>Add first product</Button>
+                <Button onClick={openAddProduct}>Add first product</Button>
               ) : undefined
             }
           />
@@ -856,18 +884,65 @@ function Products({ go }: { go: (p: Page) => void }) {
             <Field label="SKU (auto if blank)">
               <Input name="sku" />
             </Field>
-            <Field label="Barcode (auto if blank)">
-              <Input name="barcode" />
+            <Field label="Barcode (scan or auto if blank)">
+              <div className="flex gap-2">
+                <Input
+                  name="barcode"
+                  value={barcode}
+                  onChange={(e) => {
+                    setBarcode(e.target.value);
+                    if (formError) setFormError("");
+                  }}
+                  placeholder="Scan or enter barcode"
+                  autoComplete="off"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={() => {
+                    setFormError("");
+                    setScanOpen(true);
+                  }}
+                  title="Scan barcode with camera"
+                  aria-label="Scan barcode with camera"
+                >
+                  <ScanBarcode size={16} /> <span className="hidden sm:inline">Scan</span>
+                </Button>
+              </div>
+              <p className="mt-1.5 text-xs text-muted">
+                Scan the barcode printed on the product, or enter it manually. Leading zeros are preserved.
+              </p>
             </Field>
           </div>
           <Field label="Description">
             <Textarea name="description" />
           </Field>
+          {formError && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200"
+            >
+              {formError}
+            </p>
+          )}
           <Button type="submit">
             <Check size={16} /> Save product to inventory
           </Button>
         </form>
       </Modal>
+      <BarcodeScanner
+        open={scanOpen}
+        close={() => setScanOpen(false)}
+        onCode={(rawCode) => {
+          const value = rawCode.trim();
+          if (!value) return false;
+          setBarcode(value);
+          setFormError("");
+          setScanOpen(false);
+          return true;
+        }}
+      />
       <Modal
         open={limitOpen}
         onClose={() => setLimitOpen(false)}
