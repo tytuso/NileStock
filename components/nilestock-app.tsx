@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   Activity,
   Archive,
@@ -700,6 +700,14 @@ function Products({ go }: { go: (p: Page) => void }) {
     setScanOpen(false);
     setOpen(true);
   };
+  const acceptBarcodeScan = useCallback((rawCode: string) => {
+    const value = rawCode.trim();
+    if (!value) return false;
+    setBarcode(value);
+    setFormError("");
+    setScanOpen(false);
+    return true;
+  }, []);
   const list = data.products.filter((p) =>
     [p.name, p.sku, p.barcode, p.category].some((value) =>
       value.toLowerCase().includes(q.trim().toLowerCase()),
@@ -934,14 +942,7 @@ function Products({ go }: { go: (p: Page) => void }) {
       <BarcodeScanner
         open={scanOpen}
         close={() => setScanOpen(false)}
-        onCode={(rawCode) => {
-          const value = rawCode.trim();
-          if (!value) return false;
-          setBarcode(value);
-          setFormError("");
-          setScanOpen(false);
-          return true;
-        }}
+        onCode={acceptBarcodeScan}
       />
       <Modal
         open={limitOpen}
