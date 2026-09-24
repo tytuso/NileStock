@@ -26,8 +26,8 @@ import {
   Plus,
   ReceiptText,
   RefreshCw,
+  Camera,
   Search,
-  ScanBarcode,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -915,7 +915,7 @@ function Products({ go }: { go: (p: Page) => void }) {
                   title="Scan barcode with camera"
                   aria-label="Scan barcode with camera"
                 >
-                  <ScanBarcode size={16} /> <span className="hidden sm:inline">Scan</span>
+                  <Camera size={16} /> <span className="hidden sm:inline">Scan</span>
                 </Button>
               </div>
               <p className="mt-1.5 text-xs text-muted">
