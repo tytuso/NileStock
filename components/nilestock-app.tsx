@@ -892,7 +892,7 @@ function Products({ go }: { go: (p: Page) => void }) {
             <Field label="SKU (auto if blank)">
               <Input name="sku" />
             </Field>
-            <Field label="Barcode (scan or auto if blank)">
+            <Field label="Barcode (scan it or auto if blank)">
               <div className="flex gap-2">
                 <Input
                   name="barcode"
@@ -901,7 +901,7 @@ function Products({ go }: { go: (p: Page) => void }) {
                     setBarcode(e.target.value);
                     if (formError) setFormError("");
                   }}
-                  placeholder="Scan or enter barcode"
+                  placeholder="Enter or scan barcode"
                   autoComplete="off"
                 />
                 <Button
@@ -915,7 +915,7 @@ function Products({ go }: { go: (p: Page) => void }) {
                   title="Scan barcode with camera"
                   aria-label="Scan barcode with camera"
                 >
-                  <Camera size={16} /> <span className="hidden sm:inline">Scan</span>
+                  <Camera size={16} /> <span className="hidden sm:inline">Scan barcode</span>
                 </Button>
               </div>
               <p className="mt-1.5 text-xs text-muted">
