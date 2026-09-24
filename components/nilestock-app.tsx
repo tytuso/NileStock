@@ -22,6 +22,7 @@ import {
   LogOut,
   Menu,
   PackagePlus,
+  Pencil,
   PanelLeftClose,
   Plus,
   ReceiptText,
@@ -638,6 +639,7 @@ function Products({ go }: { go: (p: Page) => void }) {
     [q, setQ] = useState(""),
     [limitOpen, setLimitOpen] = useState(false),
     [savedNotice, setSavedNotice] = useState(""),
+    [editProduct, setEditProduct] = useState<Product | null>(null),
     [barcode, setBarcode] = useState(""),
     [formError, setFormError] = useState(""),
     [scanOpen, setScanOpen] = useState(false);
@@ -690,6 +692,65 @@ function Products({ go }: { go: (p: Page) => void }) {
     window.setTimeout(() => setSavedNotice(""), 3200);
     setOpen(false);
   };
+  const saveEdit = (fd: FormData) => {
+    if (!editProduct) return;
+
+    const name = String(fd.get("name") || "").trim();
+    const barcodeValue = String(fd.get("barcode") || "").trim();
+    const skuValue =
+      String(fd.get("sku") || "").trim() ||
+      "NS-" + Date.now().toString().slice(-6);
+    const newBarcode =
+      barcodeValue || "24" + Date.now().toString().slice(-10);
+
+    if (!name) {
+      setFormError("Product name is required.");
+      return;
+    }
+
+    const duplicate = data.products.find(
+      (product) =>
+        product.id !== editProduct.id &&
+        product.barcode.trim().toLowerCase() === newBarcode.toLowerCase(),
+    );
+
+    if (duplicate) {
+      setFormError(
+        "Barcode " +
+          newBarcode +
+          " is already assigned to " +
+          duplicate.name +
+          ". Use a different barcode.",
+      );
+      return;
+    }
+
+    setData((current) => ({
+      ...current,
+      products: current.products.map((product) =>
+        product.id === editProduct.id
+          ? {
+              ...product,
+              name,
+              description: String(fd.get("description") || ""),
+              category: String(fd.get("category") || "General"),
+              price: +String(fd.get("price") || 0),
+              cost: +String(fd.get("cost") || 0),
+              sku: skuValue,
+              barcode: newBarcode,
+              qr: "NS:" + newBarcode,
+              unit: String(fd.get("unit") || "piece"),
+            }
+          : product,
+      ),
+    }));
+
+    setFormError("");
+    setSavedNotice(name + " updated successfully • syncing automatically");
+    window.setTimeout(() => setSavedNotice(""), 3200);
+    setEditProduct(null);
+  };
+
   const openAddProduct = () => {
     if (atLimit) {
       setLimitOpen(true);
@@ -844,20 +905,36 @@ function Products({ go }: { go: (p: Page) => void }) {
                   </Badge>
                 </td>
                 <td>
-                  <Button
-                    variant="ghost"
-                    disabled={!can(role, "inventory")}
-                    onClick={() =>
-                      setData((d) => ({
-                        ...d,
-                        products: d.products.map((x) =>
-                          x.id === p.id ? { ...x, active: !x.active } : x,
-                        ),
-                      }))
-                    }
-                  >
-                    <Archive size={15} />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      disabled={!can(role, "inventory")}
+                      onClick={() => {
+                        setFormError("");
+                        setEditProduct(p);
+                      }}
+                      aria-label={"Edit " + p.name}
+                      title="Edit product"
+                    >
+                      <Pencil size={15} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      disabled={!can(role, "inventory")}
+                      onClick={() =>
+                        setData((d) => ({
+                          ...d,
+                          products: d.products.map((x) =>
+                            x.id === p.id ? { ...x, active: !x.active } : x,
+                          ),
+                        }))
+                      }
+                      aria-label={(p.active ? "Archive " : "Restore ") + p.name}
+                      title={p.active ? "Archive product" : "Restore product"}
+                    >
+                      <Archive size={15} />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -967,6 +1044,94 @@ function Products({ go }: { go: (p: Page) => void }) {
             <Check size={16} /> Save product to inventory
           </Button>
         </form>
+      </Modal>
+      <Modal
+        open={!!editProduct}
+        onClose={() => {
+          setEditProduct(null);
+          setFormError("");
+        }}
+        title="Edit product"
+      >
+        {editProduct && (
+          <form action={saveEdit} className="grid gap-4">
+            <Field label="Product name">
+              <Input name="name" defaultValue={editProduct.name} required />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Selling price">
+                <Input
+                  name="price"
+                  type="number"
+                  min="0"
+                  defaultValue={editProduct.price}
+                  required
+                />
+              </Field>
+              <Field label="Cost price">
+                <Input
+                  name="cost"
+                  type="number"
+                  min="0"
+                  defaultValue={editProduct.cost}
+                />
+              </Field>
+              <Field label="Category">
+                <Input name="category" defaultValue={editProduct.category} />
+              </Field>
+              <Field label="Unit">
+                <Select name="unit" defaultValue={editProduct.unit}>
+                  <option>piece</option>
+                  <option>kg</option>
+                  <option>litre</option>
+                  <option>pack</option>
+                  <option>box</option>
+                </Select>
+              </Field>
+              <Field label="SKU">
+                <Input name="sku" defaultValue={editProduct.sku} />
+              </Field>
+              <Field label="Barcode">
+                <Input
+                  name="barcode"
+                  defaultValue={editProduct.barcode}
+                  inputMode="numeric"
+                  autoComplete="off"
+                />
+              </Field>
+            </div>
+            <Field label="Description">
+              <Textarea
+                name="description"
+                defaultValue={editProduct.description}
+              />
+            </Field>
+            {formError && (
+              <p
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200"
+              >
+                {formError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  setEditProduct(null);
+                  setFormError("");
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1">
+                <Check size={16} /> Save changes
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
       <BarcodeScanner
         open={scanOpen}
