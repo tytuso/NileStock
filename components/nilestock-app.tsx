@@ -3956,6 +3956,40 @@ function HelpView({ go }: { go: (p: Page) => void }) {
           A practical guide to every important NileStock workflow.
         </p>
       </Card>
+      <Card className="border-emerald-200 p-5 dark:border-emerald-900">
+        <h3 className="flex items-center gap-2 text-lg font-bold">
+          <ReceiptText size={20} className="text-accent" /> How to print receipts
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-muted">
+          Open a completed sale or Receipt history, open the receipt, then tap Print.
+          You can reprint a receipt without recording a new sale.
+        </p>
+        <h4 className="mt-4 text-sm font-bold">Android + portable Bluetooth printer</h4>
+        <ol className="ml-5 mt-2 list-decimal space-y-2 text-sm leading-6 text-muted">
+          <li>Install RawBT from Google Play, pair the printer in Android settings, and choose it inside RawBT. Allow its Bluetooth permissions.</li>
+          <li>In NileStock, choose Print → Android Bluetooth / print app. Select the correct 58 mm or 80 mm paper width.</li>
+          <li>Tap Test print first. If it works, tap Open print app to send your receipt. Check the paper to confirm it printed.</li>
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-muted">
+          RawBT is a separate third-party app with its own terms and pricing.
+        </p>
+        <h4 className="mt-4 text-sm font-bold">iPhone, tablet or computer</h4>
+        <p className="mt-2 text-sm leading-6 text-muted">
+          Choose Device / system printer for an installed printer or compatible AirPrint printer.
+          You can also use Share PDF with a supported printer app.
+          Compatible browsers offer direct Bluetooth LE, USB and desktop serial options.
+        </p>
+        <p className="mt-3 text-sm leading-6 text-muted">
+          If nothing prints, check power, paper, permissions and the connection.
+          Pairing alone may not install a print service. Run a test in the printer app or operating system first.
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={() => go("Receipts")}>Open Receipts</Button>
+          <a href="/printing" target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-accent underline">
+            Full printer setup and troubleshooting guide
+          </a>
+        </div>
+      </Card>
       <div className="grid gap-3 md:grid-cols-2">
         {guides.map(([title, copy, target]) => (
           <Card className="p-5" key={title}>
