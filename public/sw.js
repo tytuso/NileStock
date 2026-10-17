@@ -1,5 +1,5 @@
-const SHELL_CACHE = "nilestock-shell-v10-3-4";
-const STATIC_CACHE = "nilestock-static-v10-3-4";
+const SHELL_CACHE = "nilestock-shell-v10-3-5";
+const STATIC_CACHE = "nilestock-static-v10-3-5";
 
 const CORE = [
   "/",

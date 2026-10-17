@@ -1,10 +1,12 @@
 "use client";
+import { useState } from "react";
 import { Sale } from "@/lib/types";
 import { useApp } from "@/lib/store";
 import { money } from "@/lib/utils";
 import { Button } from "./ui";
 import { Download, MessageCircle, Printer, Share2 } from "lucide-react";
 import { useDownloadFeedback } from "@/lib/use-download-feedback";
+import { ReceiptPrinter } from "./receipt-printer";
 import {
   businessInitials,
   createReceiptPdf,
@@ -14,6 +16,7 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
   const { data } = useApp(),
     b = data.business;
   const { downloadedKey, markDownloaded, labelFor } = useDownloadFeedback();
+  const [printerOpen, setPrinterOpen] = useState(false);
   const receiptFooter = b.receiptFooter.trim();
   const showNileStockBrand = !/powered by nilestock/i.test(receiptFooter);
   const createPdf = () => createReceiptPdf(b, sale, receiptFooter);
@@ -225,7 +228,7 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
         </div>
       </div>
       <div className="no-print mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Button onClick={() => window.print()}>
+        <Button onClick={() => setPrinterOpen(true)} aria-expanded={printerOpen}>
           <Printer size={16} /> Print
         </Button>
         <Button variant="secondary" onClick={downloadPdf} aria-live="polite">
@@ -243,6 +246,7 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
           {downloadedKey === "receipt" ? "Downloaded ✓" : "WhatsApp PDF"}
         </Button>
       </div>
+      {printerOpen && <ReceiptPrinter business={b} sale={sale} onClose={() => setPrinterOpen(false)} />}
       {onNew && (
         <Button className="no-print mt-3 w-full" onClick={onNew}>
           New sale

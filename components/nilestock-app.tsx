@@ -3133,6 +3133,9 @@ function SettingsView() {
               <span className="text-xs font-normal text-muted">
                 Changes the receipt preview, downloaded PDF and print width.
               </span>
+              <a href="/printing" target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-accent underline">
+                Set up a phone or desktop printer
+              </a>
             </Field>
             <Field label="Appearance">
               <Select name="theme" defaultValue={data.business.theme}>
