@@ -1,4 +1,5 @@
 "use client";
+import { isFounderEmail } from "@/lib/founder";
 import {
   useCallback,
   useEffect,
@@ -262,11 +263,7 @@ export function Entry() {
             email,
             name: cachedSession?.name || name,
             founder:
-              email.toLowerCase() ===
-              (
-                process.env.NEXT_PUBLIC_FOUNDER_EMAIL ||
-                "opiotitus333@gmail.com"
-              ).toLowerCase(),
+              isFounderEmail(email),
             cloud: true,
             userId: user.id,
             businessId: cachedBusinessId,
@@ -486,11 +483,7 @@ export function Entry() {
           email,
           name,
           founder:
-            email.toLowerCase() ===
-            (
-              process.env.NEXT_PUBLIC_FOUNDER_EMAIL ||
-              "opiotitus333@gmail.com"
-            ).toLowerCase(),
+            isFounderEmail(email),
           cloud: true,
           userId: user.id,
           businessId: String(businessId),
@@ -823,10 +816,7 @@ export function Entry() {
       email,
       name: resolvedName,
       founder:
-        email.toLowerCase() ===
-        (
-          process.env.NEXT_PUBLIC_FOUNDER_EMAIL || "opiotitus333@gmail.com"
-        ).toLowerCase(),
+        isFounderEmail(email),
     };
     localStorage.setItem("nilestock.session", JSON.stringify(s));
     localStorage.setItem(
