@@ -1,5 +1,6 @@
 import type { Business, Sale } from "./types";
 import { money } from "./utils";
+import { amountReceivedAtSale, creditSaleBalance } from "./customer-accounts";
 
 export type ThermalPaper = "58mm" | "80mm";
 
@@ -73,8 +74,8 @@ export function receiptText(business: Business, sale: Sale, paper: ThermalPaper)
   pair("TOTAL", money(sale.total, business.currency));
   rule();
   pair("Payment", sale.payment);
-  pair("Received", money(sale.paid, business.currency));
-  pair("Change", money(sale.change, business.currency));
+  pair("Received", money(amountReceivedAtSale(sale), business.currency));
+  pair(sale.payment === "Customer Credit" ? "Added to account" : "Change", money(sale.payment === "Customer Credit" ? creditSaleBalance(sale) : sale.change, business.currency));
   if (sale.note) add(`Note: ${sale.note}`);
   rule();
   add(business.receiptFooter);

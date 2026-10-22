@@ -1,4 +1,5 @@
-import type { AppData } from "./types";
+import type { AppData, Contact } from "./types";
+import { reconcileCustomerAccounts } from "./customer-accounts";
 
 export type WorkspaceBackup = {
   savedAt: string;
@@ -16,6 +17,7 @@ const collectionKeys: CollectionKey[] = [
   "products",
   "sales",
   "customers",
+  "customerEntries",
   "suppliers",
   "expenses",
   "purchases",
@@ -32,6 +34,16 @@ function sameValue(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function contactDetails(customer: Contact) {
+  const {
+    total: _total,
+    balance: _balance,
+    lastActivity: _last,
+    ...details
+  } = customer;
+  return details;
+}
+
 function mergeCollection<T extends IdentifiedRecord>(
   base: T[] | undefined,
   local: T[] | undefined,
@@ -40,7 +52,11 @@ function mergeCollection<T extends IdentifiedRecord>(
   const baseById = new Map((base || []).map((item) => [item.id, item]));
   const localById = new Map((local || []).map((item) => [item.id, item]));
   const remoteById = new Map((remote || []).map((item) => [item.id, item]));
-  const ids = new Set([...baseById.keys(), ...localById.keys(), ...remoteById.keys()]);
+  const ids = new Set([
+    ...baseById.keys(),
+    ...localById.keys(),
+    ...remoteById.keys(),
+  ]);
   const merged: T[] = [];
 
   for (const id of ids) {
@@ -74,6 +90,9 @@ export function mergeWorkspaceChanges(
   local: AppData,
   remote: AppData,
 ): AppData {
+  base = reconcileCustomerAccounts(base, { preserveStoredBalances: true });
+  local = reconcileCustomerAccounts(local, { preserveStoredBalances: true });
+  remote = reconcileCustomerAccounts(remote, { preserveStoredBalances: true });
   const merged = { ...remote } as AppData;
   for (const key of collectionKeys) {
     const baseValue = base[key] as IdentifiedRecord[] | undefined;
@@ -86,11 +105,40 @@ export function mergeWorkspaceChanges(
     );
   }
 
-  if (!sameValue(base.business, local.business) && sameValue(base.business, remote.business))
+  // Financial summaries are derived from the merged sales and ledger below.
+  // A payment on another device must not overwrite an independent name/phone edit.
+  const baseCustomers = new Map(
+    base.customers.map((customer) => [customer.id, customer]),
+  );
+  const localCustomers = new Map(
+    local.customers.map((customer) => [customer.id, customer]),
+  );
+  const remoteCustomers = new Map(
+    remote.customers.map((customer) => [customer.id, customer]),
+  );
+  merged.customers = merged.customers.map((customer) => {
+    const original = baseCustomers.get(customer.id);
+    const localCustomer = localCustomers.get(customer.id);
+    const remoteCustomer = remoteCustomers.get(customer.id);
+    if (
+      original &&
+      localCustomer &&
+      remoteCustomer &&
+      !sameValue(contactDetails(original), contactDetails(localCustomer)) &&
+      sameValue(contactDetails(original), contactDetails(remoteCustomer))
+    )
+      return { ...customer, ...contactDetails(localCustomer) };
+    return customer;
+  });
+
+  if (
+    !sameValue(base.business, local.business) &&
+    sameValue(base.business, remote.business)
+  )
     merged.business = local.business;
   if (base.onboarded !== local.onboarded && base.onboarded === remote.onboarded)
     merged.onboarded = local.onboarded;
-  return merged;
+  return reconcileCustomerAccounts(merged);
 }
 
 export const workspaceBackupKey = (businessId: string) =>
@@ -200,7 +248,10 @@ export function saveWorkspaceBackup(
     basePayload: basePayload || existing?.basePayload,
   };
   try {
-    localStorage.setItem(workspaceBackupKey(businessId), JSON.stringify(backup));
+    localStorage.setItem(
+      workspaceBackupKey(businessId),
+      JSON.stringify(backup),
+    );
   } catch {
     // Cloud sync still proceeds if storage is unavailable or full.
   }

@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import type { Business, Sale } from "./types";
 import { money } from "./utils";
+import { amountReceivedAtSale, creditSaleBalance } from "./customer-accounts";
 
 const ink = [22, 35, 29] as const;
 const muted = [91, 106, 98] as const;
@@ -74,9 +75,10 @@ function fitText(
   pdf.text(fitted, x, y, { align: options?.align ?? "left" });
 }
 
-function statusLabel(status: Sale["status"]) {
-  if (status === "refunded") return "REFUNDED";
-  if (status === "voided") return "VOIDED";
+function statusLabel(sale: Sale) {
+  if (sale.status === "refunded") return "REFUNDED";
+  if (sale.status === "voided") return "VOIDED";
+  if (creditSaleBalance(sale) > 0) return "ON ACCOUNT";
   return "PAYMENT COMPLETE";
 }
 
@@ -152,10 +154,10 @@ export function createReceiptPdf(
   pdf.setTextColor(...deepEmerald);
   pdf.setFontSize(6.5);
   pdf.text("SALE RECEIPT", left, y + 2);
-  const badgeWidth = statusLabel(sale.status) === "PAYMENT COMPLETE" ? 34 : 22;
+  const badgeWidth = statusLabel(sale) === "PAYMENT COMPLETE" ? 34 : 22;
   pdf.setFillColor(...paleEmerald);
   pdf.roundedRect(right - badgeWidth, y - 2.3, badgeWidth, 6.5, 3.2, 3.2, "F");
-  fitText(pdf, statusLabel(sale.status), right - badgeWidth / 2, y + 1.9, badgeWidth - 5, 6.2, {
+  fitText(pdf, statusLabel(sale), right - badgeWidth / 2, y + 1.9, badgeWidth - 5, 6.2, {
     align: "center",
     minSize: 5.5,
   });
@@ -319,8 +321,8 @@ export function createReceiptPdf(
   pdf.text("PAYMENT", left + 3, y);
   y += 5;
   summaryRow("Method", sale.payment, { bold: true });
-  summaryRow("Amount received", money(sale.paid, business.currency));
-  summaryRow("Change due", money(sale.change, business.currency), {
+  summaryRow("Amount received", money(amountReceivedAtSale(sale), business.currency));
+  summaryRow(sale.payment === "Customer Credit" ? "Added to account" : "Change due", money(sale.payment === "Customer Credit" ? creditSaleBalance(sale) : sale.change, business.currency), {
     bold: true,
     color: deepEmerald,
   });

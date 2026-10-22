@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Sale } from "@/lib/types";
 import { useApp } from "@/lib/store";
 import { money } from "@/lib/utils";
+import { amountReceivedAtSale, creditSaleBalance } from "@/lib/customer-accounts";
 import { Button } from "./ui";
 import { Download, MessageCircle, Printer, Share2 } from "lucide-react";
 import { useDownloadFeedback } from "@/lib/use-download-feedback";
@@ -68,7 +69,7 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
             <span className="receipt-status inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[.11em] text-emerald-800">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
               {sale.status === "completed"
-                ? "Payment complete"
+                ? creditSaleBalance(sale) > 0 ? "On account" : "Payment complete"
                 : sale.status}
             </span>
           </div>
@@ -189,11 +190,11 @@ export function Receipt({ sale, onNew }: { sale: Sale; onNew?: () => void }) {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">Amount received</span>
-                <span className="tabular">{money(sale.paid, b.currency)}</span>
+                <span className="tabular">{money(amountReceivedAtSale(sale), b.currency)}</span>
               </div>
               <div className="flex justify-between text-emerald-900">
-                <span className="font-semibold">Change due</span>
-                <b className="tabular">{money(sale.change, b.currency)}</b>
+                <span className="font-semibold">{sale.payment === "Customer Credit" ? "Added to account" : "Change due"}</span>
+                <b className="tabular">{money(sale.payment === "Customer Credit" ? creditSaleBalance(sale) : sale.change, b.currency)}</b>
               </div>
             </div>
           </section>

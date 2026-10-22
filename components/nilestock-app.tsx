@@ -73,6 +73,7 @@ import {
   Textarea,
 } from "./ui";
 import { POS } from "./pos";
+import { Customers } from "./customers";
 import { BarcodeScanner } from "./barcode-scanner";
 import { CodeCatalogue } from "./codes";
 import { Receipt } from "./receipt";
@@ -198,6 +199,7 @@ export function NileStockApp({
     [mobile, setMobile] = useState(false),
     [collapsed, setCollapsed] = useState(false),
     [search, setSearch] = useState(false),
+    [saleCustomerId, setSaleCustomerId] = useState<string | undefined>(),
     [refreshing, setRefreshing] = useState(false),
     [installPrompt, setInstallPrompt] = useState<any>(null);
   const pageKey = `nilestock.active-page.${session.email.toLowerCase()}`;
@@ -437,6 +439,8 @@ export function NileStockApp({
             <POS
               signedInName={session.name}
               signedInEmail={session.email}
+              initialCustomerId={saleCustomerId}
+              onInitialCustomerUsed={() => setSaleCustomerId(undefined)}
             />
           )}
           {page === "Products" && <Products go={setPage} />}
@@ -455,7 +459,15 @@ export function NileStockApp({
           {page === "Receipts" && <Receipts />}
           {page === "Purchases" && <Purchases />}
           {page === "Suppliers" && <Contacts kind="supplier" />}
-          {page === "Customers" && <Contacts kind="customer" />}
+          {page === "Customers" && (
+            <Customers
+              actor={session.name || session.email}
+              onNewSale={(customerId) => {
+                setSaleCustomerId(customerId);
+                setPage("Sale");
+              }}
+            />
+          )}
           {page === "Customer Requests" && <CustomerRequests go={setPage} />}
           {page === "Expenses" && <Expenses />}
           {page === "Reports" && <Reports go={setPage} />}
@@ -3818,7 +3830,7 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Handle customer debt",
-      "Choose Customer Credit at checkout, select a customer, then record repayments from Customers.",
+      "Open a customer account to add an opening balance, record payments or start a sale. At checkout, choose Customer Credit to leave a balance; enter any amount paid now.",
       "Customers",
     ],
     [
@@ -3922,7 +3934,7 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Customers",
-      "Store customer contacts, purchase history, credit balances and repayments.",
+      "Open a customer account to edit contact details, view purchases and receipts, add previous debts and keep dated payment records. New sale opens POS with that customer selected.",
     ],
     ["Help", "Opens this guide and NileStock support contacts."],
     [

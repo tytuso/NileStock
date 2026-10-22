@@ -1,4 +1,18 @@
-# NileStock v10.3.1 — nilestock.shop premium release
+# NileStock v10.4.0 — customer accounts
+
+## v10.4.0 customer accounts
+
+- Searchable customer directory with balance filters, sorting and a responsive account profile.
+- Download the current customer view as a branded PDF directory, or export an individual statement with purchases, payments, a balance brought forward and running balances. Both exports paginate automatically.
+- Edit customer contacts and notes. View linked purchases, item summaries and original receipts.
+- Add a dated opening balance when creating a customer or bring forward another previous debt from their account. Opening balances do not affect sales, revenue or stock.
+- Record partial/full payments with date, method, reference, notes and a live remaining-balance preview. Overpayments are blocked; payment history is retained.
+- Start POS from a customer account with that customer selected. Customer Credit checkout supports an amount paid immediately and adds only the unpaid remainder to the account.
+- Existing totals/debts and repayments made before this release are preserved. Merged offline entries recalculate summaries, including simultaneous payments and independent contact edits.
+- Screen, PDF and thermal receipts distinguish upfront payment from the amount charged to an account. Refunded credit sales reconcile the customer summary.
+- Uses the existing protected JSON workspace save/sync flow; no database migration. Customers and credit remain Business/Pro features.
+- Dialogs support Escape, focus containment and focus restoration; the account pages support dark mode and reduced motion. Updated PWA caches to v10.4.0.
+
 
 ## v10.3.1 launch package
 

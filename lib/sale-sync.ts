@@ -1,4 +1,5 @@
 import type { AppData, CartItem, PaymentMethod, Sale } from "./types";
+import { reconcileCustomerAccounts } from "./customer-accounts";
 
 const PAYMENT_METHODS = new Set<PaymentMethod>([
   "Cash",
@@ -49,6 +50,10 @@ export function parseCloudSale(value: unknown): Sale | null {
     !isNumber(sale.tax) ||
     !isNumber(sale.total) ||
     !isNumber(sale.paid) ||
+    (sale.creditPaid !== undefined &&
+      (!isNumber(sale.creditPaid) ||
+        sale.creditPaid < 0 ||
+        sale.creditPaid > sale.total)) ||
     !isNumber(sale.change) ||
     !PAYMENT_METHODS.has(sale.payment as PaymentMethod) ||
     !SALE_STATUSES.has(sale.status as Sale["status"])
@@ -106,6 +111,7 @@ export function markSalesSynced(data: AppData, saleIds: Set<string>) {
 }
 
 export function mergeCloudSales(data: AppData, payloads: unknown[]) {
+  data = reconcileCustomerAccounts(data, { preserveStoredBalances: true });
   const remoteById = new Map<string, Sale>();
   for (const payload of payloads) {
     const sale = parseCloudSale(payload);
@@ -226,7 +232,7 @@ export function mergeCloudSales(data: AppData, payloads: unknown[]) {
     customerTotals.set(sale.customerId, current);
   }
 
-  return {
+  return reconcileCustomerAccounts({
     ...data,
     products: data.products.map((product) => ({
       ...product,
@@ -248,5 +254,5 @@ export function mergeCloudSales(data: AppData, payloads: unknown[]) {
           }
         : customer;
     }),
-  };
+  });
 }

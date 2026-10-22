@@ -76,9 +76,13 @@ function playScanSuccess() {
 export function POS({
   signedInName,
   signedInEmail,
+  initialCustomerId,
+  onInitialCustomerUsed,
 }: {
   signedInName: string;
   signedInEmail: string;
+  initialCustomerId?: string;
+  onInitialCustomerUsed?: () => void;
 }) {
   const { data, setData, completeSale } = useApp();
   const signedInCashier = resolveCashierName(signedInName, signedInEmail);
@@ -87,7 +91,7 @@ export function POS({
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
     [discount, setDiscount] = useState(0),
-    [customer, setCustomer] = useState(""),
+    [customer, setCustomer] = useState(initialCustomerId || ""),
     [payOpen, setPayOpen] = useState(false),
     [payment, setPayment] = useState<PaymentMethod>("Cash"),
     [paid, setPaid] = useState(0),
@@ -95,6 +99,13 @@ export function POS({
     [receipt, setReceipt] = useState<Sale | null>(null),
     [scanOpen, setScanOpen] = useState(false),
     [offline, setOffline] = useState(false);
+  const initialCustomerUsed = useRef(false);
+  useEffect(() => {
+    if (initialCustomerId && !initialCustomerUsed.current) {
+      initialCustomerUsed.current = true;
+      onInitialCustomerUsed?.();
+    }
+  }, [initialCustomerId, onInitialCustomerUsed]);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const f = () => setOffline(!navigator.onLine);
@@ -193,6 +204,7 @@ export function POS({
   );
   const finish = () => {
     if (payment === "Customer Credit" && !customer) return;
+    if (!Number.isFinite(paid) || paid < 0 || (payment === "Customer Credit" && paid > calc.total)) return;
     if (!cart.every(hasValidSalePrice)) return;
     const c = data.customers.find((x) => x.id === customer);
     const sale = completeSale({
@@ -202,7 +214,8 @@ export function POS({
       customerName: c?.name,
       cashier: resolveCashierName(receiptCashier, signedInEmail),
       payment,
-      paid: payment === "Cash" ? paid : calc.total,
+      paid: payment === "Cash" || payment === "Customer Credit" ? paid : calc.total,
+      ...(payment === "Customer Credit" ? { creditPaid: paid } : {}),
       change: payment === "Cash" ? Math.max(0, paid - calc.total) : 0,
       note: "",
     });
@@ -310,6 +323,12 @@ export function POS({
           )}
         </div>
         <div className="scrollbar flex-1 overflow-auto p-3">
+          {customer && (
+            <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-emerald-600/15 bg-emerald-500/5 px-3 py-2.5 text-xs">
+              <span className="min-w-0 truncate text-accent">Customer: <b>{data.customers.find((record) => record.id === customer)?.name}</b></span>
+              <button type="button" className="focusable shrink-0 font-semibold text-muted" onClick={() => setCustomer("")}>Clear</button>
+            </div>
+          )}
           {!cart.length ? (
             <div className="grid h-full place-items-center text-center text-muted">
               <div>
@@ -513,8 +532,12 @@ export function POS({
           </div>
           <Field label="Payment method">
             <Select
+              aria-label="Payment method"
               value={payment}
-              onChange={(e) => setPayment(e.target.value as PaymentMethod)}
+              onChange={(e) => {
+                setPayment(e.target.value as PaymentMethod);
+                setPaid(0);
+              }}
             >
               {[
                 "Cash",
@@ -557,6 +580,17 @@ export function POS({
               </div>
             </>
           )}
+          {payment === "Customer Credit" && (
+            <>
+              <Field label="Amount paid now (optional)">
+                <Input type="number" min="0" max={calc.total} step="0.01" inputMode="decimal" value={paid || ""} onChange={(event) => setPaid(Number(event.target.value))} placeholder="0 — leave the full amount on account" />
+              </Field>
+              <div className="flex justify-between gap-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3 text-sm">
+                <span>Added to customer balance</span>
+                <b className="tabular">{money(Math.max(0, calc.total - paid), data.business.currency)}</b>
+              </div>
+            </>
+          )}
           <Field
             label={
               payment === "Customer Credit"
@@ -565,6 +599,7 @@ export function POS({
             }
           >
             <Select
+              aria-label={payment === "Customer Credit" ? "Customer (required)" : "Customer (optional)"}
               value={customer}
               onChange={(e) => setCustomer(e.target.value)}
             >
@@ -594,6 +629,8 @@ export function POS({
             disabled={
               (payment === "Cash" && paid < calc.total) ||
               (payment === "Customer Credit" && !customer) ||
+              !Number.isFinite(paid) || paid < 0 ||
+              (payment === "Customer Credit" && paid > calc.total) ||
               !receiptCashier.trim()
             }
             onClick={finish}

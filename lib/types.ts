@@ -46,6 +46,8 @@ export type Sale = {
   total: number;
   payment: PaymentMethod;
   paid: number;
+  /** Upfront payment on a credit sale. Absent on older, fully unpaid credit sales. */
+  creditPaid?: number;
   change: number;
   status: "completed" | "refunded" | "voided";
   note?: string;
@@ -61,6 +63,20 @@ export type Contact = {
   balance: number;
   total: number;
   lastActivity?: string;
+  /** Preserves balances and purchases recorded before the customer ledger existed. */
+  accountBaseline?: { total: number; balance: number };
+};
+export type CustomerAccountEntry = {
+  id: string;
+  customerId: string;
+  kind: "opening_balance" | "payment";
+  amount: number;
+  date: string;
+  method?: Exclude<PaymentMethod, "Customer Credit">;
+  reference?: string;
+  notes?: string;
+  createdAt: string;
+  createdBy: string;
 };
 export type Expense = {
   id: string;
@@ -157,6 +173,7 @@ export type AppData = {
   products: Product[];
   sales: Sale[];
   customers: Contact[];
+  customerEntries?: CustomerAccountEntry[];
   suppliers: Contact[];
   expenses: Expense[];
   purchases: Purchase[];

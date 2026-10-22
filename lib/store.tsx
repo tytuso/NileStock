@@ -12,6 +12,7 @@ import { AppData, CartItem, Expense, Product, Purchase, Sale } from "./types";
 import { demoData, now, uid } from "./utils";
 import { createReceiptNumber } from "./receipt-number";
 import { saveWorkspaceBackup } from "./workspace-backup";
+import { reconcileCustomerAccounts } from "./customer-accounts";
 type Ctx = {
   data: AppData;
   setData: React.Dispatch<React.SetStateAction<AppData>>;
@@ -20,10 +21,7 @@ type Ctx = {
   setRole: (r: "owner" | "manager" | "cashier") => void;
   addProduct: (p: Omit<Product, "id" | "createdAt">) => void;
   completeSale: (
-    s: Omit<
-      Sale,
-      "id" | "receiptNo" | "createdAt" | "status" | "synced"
-    >,
+    s: Omit<Sale, "id" | "receiptNo" | "createdAt" | "status" | "synced">,
   ) => Sale;
   addExpense: (e: Omit<Expense, "id">) => void;
   receivePurchase: (p: Omit<Purchase, "id">) => void;
@@ -51,10 +49,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const commitData = useCallback<React.Dispatch<React.SetStateAction<AppData>>>(
     (update) => {
       const current = dataRef.current;
-      const next =
+      const next = reconcileCustomerAccounts(
         typeof update === "function"
           ? (update as (previous: AppData) => AppData)(current)
-          : update;
+          : update,
+        { preserveStoredBalances: typeof update !== "function" },
+      );
       dataRef.current = next;
       persistImmediately(next);
       setDataState(next);
@@ -66,7 +66,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const x = localStorage.getItem(KEY);
       if (x) {
-        const restored = JSON.parse(x) as AppData;
+        const restored = reconcileCustomerAccounts(JSON.parse(x) as AppData, {
+          preserveStoredBalances: true,
+        });
         dataRef.current = restored;
         setDataState(restored);
       }

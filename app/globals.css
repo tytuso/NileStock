@@ -41,6 +41,19 @@ body {
 .tabular {
   font-variant-numeric: tabular-nums;
 }
+.customer-workspace {
+  animation: customer-enter 180ms ease-out both;
+}
+.customer-notice {
+  animation: customer-enter 180ms ease-out both;
+}
+@keyframes customer-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .customer-workspace, .customer-notice { animation: none; }
+}
 .scrollbar::-webkit-scrollbar {
   width: 5px;
   height: 5px;
