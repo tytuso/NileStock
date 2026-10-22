@@ -1,6 +1,10 @@
 import { jsPDF } from "jspdf";
 import type { Business } from "./types";
 import type { ReportSnapshot } from "./reports";
+import {
+  CUSTOMER_FONT_REGULAR,
+  CUSTOMER_FONT_BOLD,
+} from "./customer-pdf-fonts";
 
 const PAGE_WIDTH = 210;
 const MARGIN = 14;
@@ -16,7 +20,10 @@ const deepEmerald = [6, 75, 58] as const;
 const blue = [55, 126, 184] as const;
 
 function cleanText(value: string) {
-  return value.replaceAll(" • ", "  |  ");
+  return value
+    .replaceAll(" • ", "  |  ")
+    .replace(/\u00a0/g, " ")
+    .replace(/[–—−]/g, "-");
 }
 
 function truncateToWidth(
@@ -70,14 +77,14 @@ function drawHeader(
   pdf.setFillColor(255, 255, 255);
   pdf.roundedRect(14, 8, 12, 12, 2.5, 2.5, "F");
   pdf.setTextColor(...deepEmerald);
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setFontSize(8);
   pdf.text("NS", 20, 15.6, { align: "center" });
 
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(14.5);
   pdf.text("NileStock", 30, 13.5);
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   fittedText(pdf, business.name, 30, 20, 92, 8.5, { minSize: 7 });
 
   const contact = cleanText(
@@ -92,7 +99,7 @@ function drawHeader(
   });
 
   pdf.setTextColor(...ink);
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   fittedText(
     pdf,
     `${snapshot.title}${continued ? " - continued" : ""}`,
@@ -103,7 +110,7 @@ function drawHeader(
     { minSize: 12 },
   );
 
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setFillColor(232, 247, 240);
   const period = cleanText(snapshot.period);
   pdf.setFontSize(7.5);
@@ -142,12 +149,12 @@ function drawMetrics(pdf: jsPDF, snapshot: ReportSnapshot) {
     pdf.roundedRect(x, 62, width, 24, 2.5, 2.5, "FD");
     pdf.setFillColor(accent[0], accent[1], accent[2]);
     pdf.roundedRect(x + 4, 67, 2, 13, 1, 1, "F");
-    pdf.setFont("helvetica", "normal");
+    pdf.setFont("ReportSans", "normal");
     pdf.setTextColor(...muted);
     fittedText(pdf, metric.label, x + 9, 70.5, width - 13, 7.5, {
       minSize: 6.5,
     });
-    pdf.setFont("helvetica", "bold");
+    pdf.setFont("ReportSans", "bold");
     pdf.setTextColor(...ink);
     fittedText(pdf, metric.value, x + 9, 79.3, width - 13, 11, {
       minSize: 7.5,
@@ -156,20 +163,23 @@ function drawMetrics(pdf: jsPDF, snapshot: ReportSnapshot) {
 }
 
 function drawInsight(pdf: jsPDF, snapshot: ReportSnapshot) {
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setFontSize(8.5);
-  const lines = pdf.splitTextToSize(cleanText(snapshot.insight), 164) as string[];
+  const lines = pdf.splitTextToSize(
+    cleanText(snapshot.insight),
+    164,
+  ) as string[];
   const height = Math.max(16, 9 + lines.length * 4.5);
   pdf.setFillColor(246, 250, 248);
   pdf.setDrawColor(222, 232, 226);
   pdf.roundedRect(MARGIN, 92, CONTENT_WIDTH, height, 2.5, 2.5, "FD");
   pdf.setFillColor(...emerald);
   pdf.roundedRect(18, 97, 2, Math.max(6, height - 10), 1, 1, "F");
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setTextColor(...deepEmerald);
   pdf.setFontSize(7.2);
   pdf.text("REPORT SUMMARY", 24, 99.5);
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setTextColor(...ink);
   pdf.setFontSize(8.5);
   pdf.text(lines, 24, 105);
@@ -179,7 +189,7 @@ function drawInsight(pdf: jsPDF, snapshot: ReportSnapshot) {
 function drawTableHeader(pdf: jsPDF, y: number) {
   pdf.setFillColor(...deepEmerald);
   pdf.roundedRect(MARGIN, y, CONTENT_WIDTH, 9, 2, 2, "F");
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setTextColor(255, 255, 255);
   pdf.setFontSize(7.5);
   pdf.text("#", 18, y + 5.8);
@@ -200,28 +210,33 @@ function drawTableRow(
     pdf.rect(MARGIN, y, CONTENT_WIDTH, TABLE_ROW_HEIGHT, "F");
   }
   pdf.setDrawColor(226, 233, 229);
-  pdf.line(MARGIN, y + TABLE_ROW_HEIGHT, MARGIN + CONTENT_WIDTH, y + TABLE_ROW_HEIGHT);
+  pdf.line(
+    MARGIN,
+    y + TABLE_ROW_HEIGHT,
+    MARGIN + CONTENT_WIDTH,
+    y + TABLE_ROW_HEIGHT,
+  );
   pdf.line(25, y, 25, y + TABLE_ROW_HEIGHT);
   pdf.line(96, y, 96, y + TABLE_ROW_HEIGHT);
   pdf.line(158, y, 158, y + TABLE_ROW_HEIGHT);
 
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setTextColor(...muted);
   pdf.setFontSize(7.5);
   pdf.text(String(index + 1), 19.5, y + 7.2, { align: "center" });
 
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setTextColor(...ink);
   fittedText(pdf, cleanText(row.label), 29, y + 7.2, 63, 8.5, {
     minSize: 6.5,
   });
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setTextColor(...muted);
   fittedText(pdf, cleanText(row.detail), 100, y + 7.2, 54, 7.2, {
     minSize: 6,
   });
 
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setTextColor(...deepEmerald);
   fittedText(pdf, cleanText(row.value), 191, y + 7.2, 29, 8.5, {
     align: "right",
@@ -233,13 +248,13 @@ function drawEmptyState(pdf: jsPDF, y: number) {
   pdf.setFillColor(248, 251, 249);
   pdf.setDrawColor(222, 232, 226);
   pdf.roundedRect(MARGIN, y, CONTENT_WIDTH, 28, 3, 3, "FD");
-  pdf.setFont("helvetica", "bold");
+  pdf.setFont("ReportSans", "bold");
   pdf.setTextColor(...ink);
   pdf.setFontSize(10);
   pdf.text("No records available", PAGE_WIDTH / 2, y + 11, {
     align: "center",
   });
-  pdf.setFont("helvetica", "normal");
+  pdf.setFont("ReportSans", "normal");
   pdf.setTextColor(...muted);
   pdf.setFontSize(8);
   pdf.text(
@@ -256,7 +271,7 @@ function drawFooters(pdf: jsPDF, business: Business) {
     pdf.setPage(page);
     pdf.setDrawColor(214, 225, 219);
     pdf.line(MARGIN, FOOTER_LINE_Y, PAGE_WIDTH - MARGIN, FOOTER_LINE_Y);
-    pdf.setFont("helvetica", "normal");
+    pdf.setFont("ReportSans", "normal");
     pdf.setTextColor(...muted);
     fittedText(
       pdf,
@@ -267,13 +282,13 @@ function drawFooters(pdf: jsPDF, business: Business) {
       7,
       { minSize: 6 },
     );
-    pdf.setFont("helvetica", "bold");
+    pdf.setFont("ReportSans", "bold");
     pdf.setTextColor(...deepEmerald);
     pdf.setFontSize(7);
     pdf.text("Powered by NileStock", PAGE_WIDTH / 2, FOOTER_TEXT_Y, {
       align: "center",
     });
-    pdf.setFont("helvetica", "normal");
+    pdf.setFont("ReportSans", "normal");
     pdf.setTextColor(...muted);
     pdf.text(`Page ${page} of ${pages}`, PAGE_WIDTH - MARGIN, FOOTER_TEXT_Y, {
       align: "right",
@@ -286,7 +301,22 @@ export function createBrandedReportPdf(
   snapshot: ReportSnapshot,
   generatedAt = new Date(),
 ) {
-  const pdf = new jsPDF({ unit: "mm", format: "a4", compress: true });
+  const pdf = new jsPDF({
+    unit: "mm",
+    format: "a4",
+    compress: true,
+    putOnlyUsedFonts: true,
+  });
+  pdf.addFileToVFS("LiberationSans-Regular.ttf", CUSTOMER_FONT_REGULAR);
+  pdf.addFileToVFS("LiberationSans-Bold.ttf", CUSTOMER_FONT_BOLD);
+  pdf.addFont("LiberationSans-Regular.ttf", "ReportSans", "normal");
+  pdf.addFont("LiberationSans-Bold.ttf", "ReportSans", "bold");
+  pdf.setProperties({
+    title: `${snapshot.title} - ${business.name}`,
+    subject: snapshot.period,
+    author: business.name,
+    creator: "NileStock",
+  });
   drawHeader(pdf, business, snapshot, generatedAt);
   drawMetrics(pdf, snapshot);
   const insightBottom = drawInsight(pdf, snapshot);

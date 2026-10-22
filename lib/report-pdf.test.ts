@@ -47,6 +47,7 @@ describe("polished PDF reports", () => {
       new Date("2026-08-17T08:14:21.000Z"),
     );
     expect(pdf.getNumberOfPages()).toBe(1);
+    expect(pdf.getFontList().ReportSans).toEqual(["normal", "bold"]);
     expect(pdf.output("arraybuffer").byteLength).toBeGreaterThan(3_000);
   });
 

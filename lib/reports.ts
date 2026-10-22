@@ -1,5 +1,13 @@
 import type { AppData } from "./types";
-import { day, money } from "./utils";
+import { money } from "./utils";
+import {
+  isInReportRange,
+  reportDisplayDate,
+  reportPeriodLabel,
+  reportRangeError,
+  selectReportPeriod,
+  type ReportDateRange,
+} from "./report-period";
 
 export const REPORT_KINDS = [
   "Daily",
@@ -29,43 +37,103 @@ const windows: Partial<Record<ReportKind, number>> = {
   Monthly: 2_678_400_000,
 };
 
+export const PERIOD_REPORT_KINDS: ReportKind[] = [
+  "Sales",
+  "Profit",
+  "Expenses",
+  "Customer Requests",
+];
+
+export function buildPerformanceReport(
+  data: AppData,
+  range: ReportDateRange,
+): ReportSnapshot {
+  const summary = selectReportPeriod(data, range);
+  const currency = data.business.currency;
+  const rows = [
+    ...summary.sales.map((sale) => ({
+      date: sale.createdAt,
+      label: sale.receiptNo,
+      detail: `${reportDisplayDate(sale.createdAt)} • Sale • ${sale.payment}`,
+      value: money(sale.total, currency),
+    })),
+    ...summary.expenses.map((expense) => ({
+      date: expense.date,
+      label: expense.description,
+      detail: `${reportDisplayDate(expense.date)} • Expense • ${expense.category}`,
+      value: money(-expense.amount, currency),
+    })),
+  ]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(({ date: _date, ...row }) => row);
+  return {
+    title: "Business performance report",
+    period: reportPeriodLabel(range),
+    insight: `${summary.sales.length} completed transaction${summary.sales.length === 1 ? "" : "s"}. Estimated net profit is gross profit less operating expenses recorded in this period.`,
+    metrics: [
+      { label: "Revenue", value: money(summary.revenue, currency) },
+      { label: "Gross profit", value: money(summary.grossProfit, currency) },
+      { label: "Operating expenses", value: money(summary.expense, currency) },
+      {
+        label: "Estimated net profit",
+        value: money(summary.netProfit, currency),
+      },
+    ],
+    rows,
+  };
+}
+
 export function buildReportSnapshot(
   data: AppData,
   kind: ReportKind,
+  range?: ReportDateRange,
 ): ReportSnapshot {
   const currency = data.business.currency;
+  // Inventory, credit and supplier balances are current snapshots, not historical balances.
+  const useRange =
+    range && !["Inventory", "Customer Credit", "Supplier"].includes(kind);
+  if (useRange && reportRangeError(range))
+    throw new RangeError(reportRangeError(range));
   const windowMs = windows[kind];
-  const within = (value: string) =>
-    !windowMs || Date.now() - new Date(value).getTime() < windowMs;
+  const now = Date.now();
+  const within = (value: string) => {
+    if (useRange) return isInReportRange(value, range);
+    if (!windowMs) return true;
+    const age = now - new Date(value).getTime();
+    return age >= 0 && age < windowMs;
+  };
   const sales = data.sales.filter(
     (sale) => sale.status === "completed" && within(sale.createdAt),
   );
-  const expenses = data.expenses.filter((expense) =>
-    windowMs ? within(expense.date) : true,
-  );
+  const expenses = data.expenses.filter((expense) => within(expense.date));
   const revenue = sales.reduce((sum, sale) => sum + sale.total, 0);
   const cost = sales.reduce(
     (sum, sale) =>
       sum + sale.items.reduce((line, item) => line + item.cost * item.qty, 0),
     0,
   );
-  const expenseTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0);
+  const expenseTotal = expenses.reduce(
+    (sum, expense) => sum + expense.amount,
+    0,
+  );
   const grossProfit = revenue - cost;
   const netEstimate = grossProfit - expenseTotal;
-  const saleRows = sales.slice(0, 18).map((sale) => ({
+  const saleRows = sales.map((sale) => ({
     label: sale.receiptNo,
-    detail: `${day(sale.createdAt)} • ${sale.items.reduce((sum, item) => sum + item.qty, 0)} items`,
+    detail: `${reportDisplayDate(sale.createdAt)} • ${sale.items.reduce((sum, item) => sum + item.qty, 0)} items`,
     value: money(sale.total, currency),
   }));
-  const period = windowMs
-    ? `Last ${kind === "Daily" ? "24 hours" : kind === "Weekly" ? "7 days" : "31 days"}`
-    : "Current business data";
+  const period = useRange
+    ? reportPeriodLabel(range)
+    : windowMs
+      ? `Last ${kind === "Daily" ? "24 hours" : kind === "Weekly" ? "7 days" : "31 days"}`
+      : "Current business data";
 
   if (["Daily", "Weekly", "Monthly", "Sales"].includes(kind)) {
     const average = sales.length ? revenue / sales.length : 0;
     return {
       title: `${kind} report`,
-      period: kind === "Sales" ? "All completed sales" : period,
+      period: kind === "Sales" && !useRange ? "All completed sales" : period,
       insight: sales.length
         ? `${sales.length} completed transaction${sales.length === 1 ? "" : "s"} generated ${money(revenue, currency)} in revenue.`
         : "No completed sales are recorded for this period yet.",
@@ -85,8 +153,8 @@ export function buildReportSnapshot(
       period,
       insight:
         netEstimate >= 0
-          ? `The current net estimate is ${money(netEstimate, currency)} after recorded expenses.`
-          : `Recorded costs and expenses currently exceed gross profit by ${money(Math.abs(netEstimate), currency)}.`,
+          ? `The net estimate for this period is ${money(netEstimate, currency)} after recorded expenses.`
+          : `Recorded expenses exceed gross profit by ${money(Math.abs(netEstimate), currency)}.`,
       metrics: [
         { label: "Revenue", value: money(revenue, currency) },
         { label: "Cost of goods", value: money(cost, currency) },
@@ -126,26 +194,30 @@ export function buildReportSnapshot(
   }
 
   if (kind === "Expenses") {
-    const byCategory = expenses.reduce<Record<string, number>>((totals, expense) => {
-      totals[expense.category] = (totals[expense.category] || 0) + expense.amount;
-      return totals;
-    }, {});
+    const byCategory = expenses.reduce<Record<string, number>>(
+      (totals, expense) => {
+        totals[expense.category] =
+          (totals[expense.category] || 0) + expense.amount;
+        return totals;
+      },
+      {},
+    );
     const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0];
     return {
       title: "Expenses report",
       period,
       insight: top
         ? `${top[0]} is the largest recorded expense category at ${money(top[1], currency)}.`
-        : "No operating expenses have been recorded yet.",
+        : "No operating expenses are recorded for this period.",
       metrics: [
         { label: "Total expenses", value: money(expenseTotal, currency) },
         { label: "Entries", value: String(expenses.length) },
         { label: "Categories", value: String(Object.keys(byCategory).length) },
         { label: "Largest category", value: top?.[0] || "—" },
       ],
-      rows: expenses.slice(0, 18).map((expense) => ({
+      rows: expenses.map((expense) => ({
         label: expense.description,
-        detail: `${expense.category} • ${day(expense.date)}`,
+        detail: `${expense.category} • ${reportDisplayDate(expense.date)}`,
         value: money(expense.amount, currency),
       })),
     };
@@ -153,7 +225,10 @@ export function buildReportSnapshot(
 
   if (kind === "Customer Credit") {
     const owing = data.customers.filter((customer) => customer.balance > 0);
-    const outstanding = owing.reduce((sum, customer) => sum + customer.balance, 0);
+    const outstanding = owing.reduce(
+      (sum, customer) => sum + customer.balance,
+      0,
+    );
     return {
       title: "Customer credit report",
       period,
@@ -164,11 +239,16 @@ export function buildReportSnapshot(
         { label: "Outstanding", value: money(outstanding, currency) },
         { label: "Customers owing", value: String(owing.length) },
         { label: "Customer records", value: String(data.customers.length) },
-        { label: "Average balance", value: money(owing.length ? outstanding / owing.length : 0, currency) },
+        {
+          label: "Average balance",
+          value: money(owing.length ? outstanding / owing.length : 0, currency),
+        },
       ],
       rows: owing.slice(0, 18).map((customer) => ({
         label: customer.name,
-        detail: customer.lastActivity ? `Last activity ${day(customer.lastActivity)}` : "No recent activity",
+        detail: customer.lastActivity
+          ? `Last activity ${reportDisplayDate(customer.lastActivity)}`
+          : "No recent activity",
         value: money(customer.balance, currency),
       })),
     };
@@ -197,15 +277,22 @@ export function buildReportSnapshot(
       ],
       rows: data.suppliers.slice(0, 18).map((supplier) => ({
         label: supplier.name,
-        detail: supplier.lastActivity ? `Last activity ${day(supplier.lastActivity)}` : "No recent activity",
+        detail: supplier.lastActivity
+          ? `Last activity ${reportDisplayDate(supplier.lastActivity)}`
+          : "No recent activity",
         value: money(supplier.balance, currency),
       })),
     };
   }
 
-  const requests = data.requests || [];
+  const requests = (data.requests || []).filter((request) =>
+    within(request.createdAt),
+  );
   const open = requests.filter((request) => request.status === "open");
-  const requestedUnits = open.reduce((sum, request) => sum + request.quantity, 0);
+  const requestedUnits = open.reduce(
+    (sum, request) => sum + request.quantity,
+    0,
+  );
   return {
     title: "Customer requests report",
     period,
@@ -215,12 +302,17 @@ export function buildReportSnapshot(
     metrics: [
       { label: "Open requests", value: String(open.length) },
       { label: "Requested units", value: String(requestedUnits) },
-      { label: "Sourced", value: String(requests.filter((request) => request.status === "sourced").length) },
+      {
+        label: "Sourced",
+        value: String(
+          requests.filter((request) => request.status === "sourced").length,
+        ),
+      },
       { label: "Total records", value: String(requests.length) },
     ],
-    rows: requests.slice(0, 18).map((request) => ({
+    rows: requests.map((request) => ({
       label: request.product,
-      detail: `${request.status} • ${day(request.createdAt)}`,
+      detail: `${request.status} • ${reportDisplayDate(request.createdAt)}`,
       value: `${request.quantity} units`,
     })),
   };

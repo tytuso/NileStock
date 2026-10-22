@@ -1,4 +1,13 @@
-# NileStock v10.4.0 — customer accounts
+# NileStock v10.4.1 — reports for any period
+
+## v10.4.1 custom reporting periods
+
+- From/To date controls in Reports and PDF Reports, with Today, Last 7 days, This month and All time shortcuts. The selected dates carry between both screens.
+- Revenue, recorded cost of goods, gross profit, operating expenses, estimated net profit, payment mix and best-selling products all use completed sales in the selected period. Both boundary days are included in the device's local time; date-only expenses retain their calendar date.
+- Download or share a branded performance PDF with the exact period, matching totals and every completed sale/expense. Sales, profit, expense and customer-request reports also use the selected dates; CSV export matches the selected completed sales.
+- Daily/weekly/monthly downloads are available through the date shortcuts. Invalid ranges are explained and blocked; empty periods show zero totals. Inventory, customer credit and supplier reports remain clearly marked current snapshots.
+- Embedded report fonts keep PDF text consistent across viewers. PDF code/fonts load when needed; date-filtered charts update immediately.
+- No database migration or new paid dependency. Updated PWA caches to v10.4.1.
 
 ## v10.4.0 customer accounts
 

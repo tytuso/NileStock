@@ -102,11 +102,20 @@ import {
 } from "@/lib/plans";
 import {
   REPORT_KINDS,
+  PERIOD_REPORT_KINDS,
+  buildPerformanceReport,
   buildReportSnapshot,
   type ReportKind,
   type ReportSnapshot,
 } from "@/lib/reports";
-import { createBrandedReportPdf } from "@/lib/report-pdf";
+import { ReportDateFilter, type ReportPeriodProps } from "./report-date-filter";
+import {
+  reportPeriodFilename,
+  reportPeriodLabel,
+  reportRangeError,
+  selectReportPeriod,
+  type ReportDateRange,
+} from "@/lib/report-period";
 import { AiAdviser } from "./ai-adviser";
 import { FounderControl } from "./founder-control";
 import { PlanView } from "./plan-view";
@@ -202,6 +211,7 @@ export function NileStockApp({
     [saleCustomerId, setSaleCustomerId] = useState<string | undefined>(),
     [refreshing, setRefreshing] = useState(false),
     [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [reportRange, setReportRange] = useState<ReportDateRange>({ from: "", to: "" });
   const pageKey = `nilestock.active-page.${session.email.toLowerCase()}`;
   const initials = session.name
     .split(/\s+/)
@@ -470,8 +480,8 @@ export function NileStockApp({
           )}
           {page === "Customer Requests" && <CustomerRequests go={setPage} />}
           {page === "Expenses" && <Expenses />}
-          {page === "Reports" && <Reports go={setPage} />}
-          {page === "PDF Reports" && <PdfReports go={setPage} />}
+          {page === "Reports" && <Reports go={setPage} range={reportRange} onRangeChange={setReportRange} />}
+          {page === "PDF Reports" && <PdfReports go={setPage} range={reportRange} onRangeChange={setReportRange} />}
           {page === "Staff" && <StaffView />}
           {page === "Audit Log" && <AuditView />}
           {page === "Settings" && <SettingsView />}
@@ -1937,7 +1947,7 @@ function Sales({ go }: { go: (p: Page) => void }) {
     const date = s.createdAt.slice(0, 10);
     return (!from || date >= from) && (!to || date <= to);
   });
-  const downloadSalesPdf = () => {
+  const downloadSalesPdf = async () => {
     if (!canExport) {
       go("Billing");
       return;
@@ -1970,6 +1980,7 @@ function Sales({ go }: { go: (p: Page) => void }) {
         value: money(sale.total, data.business.currency),
       })),
     };
+    const { createBrandedReportPdf } = await import("@/lib/report-pdf");
     const pdf = createBrandedReportPdf(data.business, snapshot);
     pdf.save(`${fileSafeName(data.business.name)}-sales-report.pdf`);
     markDownloaded("sales-pdf");
@@ -2661,170 +2672,228 @@ function Expenses() {
     </div>
   );
 }
-function Reports({ go }: { go: (p: Page) => void }) {
-  const { data } = useApp();
-  const { markDownloaded, labelFor } = useDownloadFeedback();
-  const revenue = data.sales
-      .filter((s) => s.status === "completed")
-      .reduce((x, s) => x + s.total, 0),
-    cogs = data.sales
-      .filter((s) => s.status === "completed")
-      .reduce((x, s) => x + s.items.reduce((a, i) => a + i.cost * i.qty, 0), 0),
-    expense = data.expenses.reduce((x, e) => x + e.amount, 0);
-  const pay = Object.entries(
-    data.sales.reduce(
-      (a, s) => ((a[s.payment] = (a[s.payment] || 0) + s.total), a),
-      {} as Record<string, number>,
-    ),
-  ).map(([name, value]) => ({ name, value }));
-  const products = Object.values(
-    data.sales
-      .flatMap((s) => s.items)
-      .reduce(
-        (a, i) => ((a[i.name] = (a[i.name] || 0) + i.qty), a),
-        {} as Record<string, number>,
-      ),
-  ).length
-    ? Object.entries(
-        data.sales
-          .flatMap((s) => s.items)
-          .reduce(
-            (a, i) => ((a[i.name] = (a[i.name] || 0) + i.qty), a),
-            {} as Record<string, number>,
-          ),
-      )
-        .map(([name, qty]) => ({ name, qty }))
-        .sort((a, b) => b.qty - a.qty)
-        .slice(0, 6)
-    : data.products.slice(0, 6).map((p) => ({ name: p.name, qty: 0 }));
+function ReportMetrics({
+  summary,
+  currency,
+}: {
+  summary: ReturnType<typeof selectReportPeriod>;
+  currency: string;
+}) {
+  const metrics = [
+    { label: "Revenue", value: summary.revenue },
+    { label: "Gross profit", value: summary.grossProfit },
+    { label: "Operating expenses", value: summary.expense },
+    { label: "Estimated net profit", value: summary.netProfit },
+  ];
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button onClick={() => go("PDF Reports")}>
-          <FileText size={16} /> Open PDF report centre
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            if (!hasMinimumPlan(data.business.plan, "business")) {
-              go("Billing");
-              return;
-            }
-            download(
-              `${fileSafeName(data.business.name)}-business-report.csv`,
-              csv(
-                data.sales.map((s) => ({
-                  receipt: s.receiptNo,
-                  date: s.createdAt,
-                  payment: s.payment,
-                  total: s.total,
-                  status: s.status,
-                })),
-              ),
-              "text/csv",
-            );
-            markDownloaded("business-report-csv");
-          }}
-          aria-live="polite"
-        >
-          {!hasMinimumPlan(data.business.plan, "business") && <Lock size={14} />}
-          {hasMinimumPlan(data.business.plan, "business")
-            ? labelFor("business-report-csv", "Export report CSV")
-            : "Business • Export CSV"}
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Metric l="Revenue" v={money(revenue, data.business.currency)} />
-        <Metric
-          l="Gross profit"
-          v={money(revenue - cogs, data.business.currency)}
-        />
-        <Metric
-          l="Operating expenses"
-          v={money(expense, data.business.currency)}
-        />
-        <Metric
-          l="Estimated net profit"
-          v={money(revenue - cogs - expense, data.business.currency)}
-        />
-      </div>
-      <p className="text-xs text-muted">
-        Profit is estimated from recorded sale prices, product costs and
-        operational expenses.
-      </p>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card className="p-4">
-          <b>Best-selling products</b>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer>
-              <BarChart data={products} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis type="number" />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={100}
-                  tick={{ fontSize: 11 }}
-                />
-                <Tooltip />
-                <Bar dataKey="qty" fill="#0d7a53" radius={[0, 5, 5, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+    <div
+      className="grid grid-cols-2 gap-3 lg:grid-cols-4"
+      aria-label="Period totals"
+    >
+      {metrics.map((metric) => (
+        <Card key={metric.label} className="min-w-0 p-4">
+          <span className="text-xs text-muted">{metric.label}</span>
+          <b className="mt-2 block break-words text-lg tabular lg:text-xl">
+            {money(metric.value, currency)}
+          </b>
         </Card>
-        <Card className="p-4">
-          <b>Payment mix</b>
-          <div className="mt-4 h-72">
-            <ResponsiveContainer>
-              <PieChart>
-                <Pie
-                  data={pay.length ? pay : [{ name: "No sales", value: 1 }]}
-                  dataKey="value"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={3}
-                >
-                  {(pay.length ? pay : [1]).map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={
-                        ["#0d7a53", "#e2a93b", "#4d75b8", "#9a6ab0", "#7d857f"][
-                          i % 5
-                        ]
-                      }
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  formatter={(v) => money(Number(v), data.business.currency)}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap gap-3 text-xs">
-            {pay.map((p, i) => (
-              <span key={p.name}>
-                <i
-                  className="mr-1 inline-block h-2 w-2 rounded-full"
-                  style={{
-                    background: [
-                      "#0d7a53",
-                      "#e2a93b",
-                      "#4d75b8",
-                      "#9a6ab0",
-                      "#7d857f",
-                    ][i % 5],
-                  }}
-                />
-                {p.name} {money(p.value, data.business.currency)}
-              </span>
-            ))}
-          </div>
-        </Card>
-      </div>
+      ))}
     </div>
   );
 }
+
+function Reports({
+  go,
+  range,
+  onRangeChange,
+}: { go: (p: Page) => void } & ReportPeriodProps) {
+  const { data } = useApp();
+  const { markDownloaded, labelFor } = useDownloadFeedback();
+  const error = reportRangeError(range);
+  const summary = error ? null : selectReportPeriod(data, range);
+  const sales = summary?.sales || [];
+  const pay = Object.entries(
+    sales.reduce(
+      (totals, sale) => {
+        totals[sale.payment] = (totals[sale.payment] || 0) + sale.total;
+        return totals;
+      },
+      {} as Record<string, number>,
+    ),
+  ).map(([name, value]) => ({ name, value }));
+  const products = Object.entries(
+    sales
+      .flatMap((sale) => sale.items)
+      .reduce(
+        (totals, item) => {
+          totals[item.name] = (totals[item.name] || 0) + item.qty;
+          return totals;
+        },
+        {} as Record<string, number>,
+      ),
+  )
+    .map(([name, qty]) => ({ name, qty }))
+    .sort((a, b) => b.qty - a.qty)
+    .slice(0, 6);
+  return (
+    <div className="space-y-4">
+      <ReportDateFilter range={range} onRangeChange={onRangeChange} />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">
+          {summary
+            ? `${sales.length} completed transaction${sales.length === 1 ? "" : "s"} in this period`
+            : "Correct the dates to view performance."}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => go("PDF Reports")}>
+            <FileText size={16} /> Open PDF report centre
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!!error}
+            onClick={() => {
+              if (!hasMinimumPlan(data.business.plan, "business")) {
+                go("Billing");
+                return;
+              }
+              download(
+                `${fileSafeName(data.business.name)}-business-report-${reportPeriodFilename(range)}.csv`,
+                csv(
+                  sales.map((sale) => ({
+                    receipt: sale.receiptNo,
+                    date: sale.createdAt,
+                    payment: sale.payment,
+                    total: sale.total,
+                    status: sale.status,
+                  })),
+                ),
+                "text/csv",
+              );
+              markDownloaded(
+                `business-report-csv-${reportPeriodFilename(range)}`,
+              );
+            }}
+            aria-live="polite"
+          >
+            {!hasMinimumPlan(data.business.plan, "business") && (
+              <Lock size={14} />
+            )}
+            {hasMinimumPlan(data.business.plan, "business")
+              ? labelFor(
+                  `business-report-csv-${reportPeriodFilename(range)}`,
+                  "Export report CSV",
+                )
+              : "Business • Export CSV"}
+          </Button>
+        </div>
+      </div>
+      {summary && (
+        <>
+          <ReportMetrics summary={summary} currency={data.business.currency} />
+          <p className="text-xs text-muted">
+            Profit is estimated from completed sales, recorded product costs and
+            operating expenses in the selected period.
+          </p>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="p-4">
+              <b>Best-selling products</b>
+              {products.length ? (
+                <div className="mt-4 h-72">
+                  <ResponsiveContainer>
+                    <BarChart data={products} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                      <XAxis type="number" />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={100}
+                        tick={{ fontSize: 11 }}
+                      />
+                      <Tooltip />
+                      <Bar dataKey="qty" fill="#0d7a53" radius={[0, 5, 5, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <Empty
+                  title="No sales in this period"
+                  copy="Choose another date range to see your best-selling products."
+                />
+              )}
+            </Card>
+            <Card className="p-4">
+              <b>Payment mix</b>
+              {pay.length ? (
+                <>
+                  <div className="mt-4 h-72">
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie
+                          isAnimationActive={false}
+                          data={pay}
+                          dataKey="value"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={3}
+                        >
+                          {pay.map((entry, index) => (
+                            <Cell
+                              key={entry.name}
+                              fill={
+                                [
+                                  "#0d7a53",
+                                  "#e2a93b",
+                                  "#4d75b8",
+                                  "#9a6ab0",
+                                  "#7d857f",
+                                ][index % 5]
+                              }
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(value) =>
+                            money(Number(value), data.business.currency)
+                          }
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    {pay.map((entry, index) => (
+                      <span key={entry.name}>
+                        <i
+                          className="mr-1 inline-block h-2 w-2 rounded-full"
+                          style={{
+                            background: [
+                              "#0d7a53",
+                              "#e2a93b",
+                              "#4d75b8",
+                              "#9a6ab0",
+                              "#7d857f",
+                            ][index % 5],
+                          }}
+                        />
+                        {entry.name}{" "}
+                        {money(entry.value, data.business.currency)}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <Empty
+                  title="No payments to display"
+                  copy="Payment totals will appear for completed sales in this period."
+                />
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function StaffView() {
   const { data, setData, role } = useApp();
   const [open, setOpen] = useState(false),
@@ -3242,7 +3311,7 @@ function CustomerRequests({ go }: { go: (p: Page) => void }) {
   const { markDownloaded, labelFor } = useDownloadFeedback();
   const [open, setOpen] = useState(false);
   const requests = data.requests || [];
-  const exportPdf = () => {
+  const exportPdf = async () => {
     if (!canExport) {
       go("Billing");
       return;
@@ -3275,6 +3344,7 @@ function CustomerRequests({ go }: { go: (p: Page) => void }) {
         value: `${request.quantity} units`,
       })),
     };
+    const { createBrandedReportPdf } = await import("@/lib/report-pdf");
     const pdf = createBrandedReportPdf(data.business, snapshot);
     pdf.save(`${fileSafeName(data.business.name)}-customer-requests.pdf`);
     markDownloaded("customer-requests");
@@ -3401,124 +3471,241 @@ function CustomerRequests({ go }: { go: (p: Page) => void }) {
   );
 }
 
-function PdfReports({ go }: { go: (p: Page) => void }) {
+function PdfReports({
+  go,
+  range,
+  onRangeChange,
+}: { go: (p: Page) => void } & ReportPeriodProps) {
   const { data } = useApp();
   const { markDownloaded, labelFor } = useDownloadFeedback();
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
+  // Warm the export chunk on entering the centre; fonts stay out of initial app loading.
+  useEffect(() => {
+    void import("@/lib/report-pdf").catch(() => {});
+  }, []);
+  const periodKey = reportPeriodFilename(range);
+  const downloadKey = (kind: ReportKind | "Performance") =>
+    kind === "Performance" || PERIOD_REPORT_KINDS.includes(kind)
+      ? `${kind}-${periodKey}`
+      : kind;
   const canExport = hasMinimumPlan(data.business.plan, "business");
-  const create = (kind: ReportKind, share = false) => {
+  const error = reportRangeError(range);
+  const performance = error ? null : selectReportPeriod(data, range);
+  const create = async (kind: ReportKind | "Performance", share = false) => {
     if (!canExport) {
       go("Billing");
       return;
     }
-    const snapshot = buildReportSnapshot(data, kind);
-    const pdf = createBrandedReportPdf(data.business, snapshot);
-    const filename = `${fileSafeName(data.business.name)}-${kind.toLowerCase().replaceAll(" ", "-")}-report.pdf`;
-    if (!share) {
-      pdf.save(filename);
-      markDownloaded(kind);
-      return;
-    }
-    const file = new File([pdf.output("blob")], filename, {
-      type: "application/pdf",
-    });
-    if (navigator.share && navigator.canShare?.({ files: [file] }))
-      return navigator
-        .share({
-          title: `${data.business.name} ${kind} report`,
-          text: `${data.business.name} ${kind.toLowerCase()} report`,
+    const usesPeriod =
+      kind === "Performance" || PERIOD_REPORT_KINDS.includes(kind);
+    if ((usesPeriod && error) || exporting) return;
+    setExporting(true);
+    setExportError("");
+    try {
+      const snapshot =
+        kind === "Performance"
+          ? buildPerformanceReport(data, range)
+          : buildReportSnapshot(data, kind, usesPeriod ? range : undefined);
+      const { createBrandedReportPdf } = await import("@/lib/report-pdf");
+      const pdf = createBrandedReportPdf(data.business, snapshot);
+      const filename = `${fileSafeName(data.business.name)}-${kind.toLowerCase().replaceAll(" ", "-")}-report${usesPeriod ? `-${reportPeriodFilename(range)}` : ""}.pdf`;
+      if (!share) {
+        pdf.save(filename);
+        markDownloaded(downloadKey(kind));
+        return;
+      }
+      const file = new File([pdf.output("blob")], filename, {
+        type: "application/pdf",
+      });
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: `${data.business.name} ${snapshot.title}`,
+          text: `${snapshot.title} • ${snapshot.period}`,
           files: [file],
-        })
-        .catch(() => {});
-    pdf.save(filename);
-    markDownloaded(kind);
-    window.open(
-      `https://wa.me/?text=${encodeURIComponent(`${data.business.name} ${kind} report is ready. The PDF has downloaded; attach ${filename} in this chat.`)}`,
-      "_blank",
-    );
+        });
+        return;
+      }
+      pdf.save(filename);
+      markDownloaded(downloadKey(kind));
+      window.open(
+        `https://wa.me/?text=${encodeURIComponent(`${data.business.name} ${snapshot.title} (${snapshot.period}) is ready. The PDF has downloaded; attach ${filename} in this chat.`)}`,
+        "_blank",
+      );
+    } catch (failure) {
+      if (!(failure instanceof Error && failure.name === "AbortError"))
+        setExportError("The PDF could not be prepared. Please try again.");
+    } finally {
+      setExporting(false);
+    }
   };
   return (
-    <div>
-      <div className="mb-6 rounded-2xl bg-gradient-to-r from-emerald-950 via-[#165464] to-[#435b98] p-7 text-white shadow-[0_24px_70px_rgba(19,76,73,.2)]">
+    <div className="space-y-5">
+      <div className="rounded-2xl bg-gradient-to-r from-emerald-950 via-[#165464] to-[#435b98] p-5 text-white shadow-[0_24px_70px_rgba(19,76,73,.2)] sm:p-7">
         <div className="flex items-center gap-3">
           <FileText />
-          {!canExport && (
-            <span className="flex items-center gap-1 rounded-full bg-red-500/18 px-3 py-1 text-xs font-bold text-red-100">
-              <Lock size={13} /> BUSINESS
-            </span>
-          )}
+          {!canExport && <Badge tone="red">BUSINESS</Badge>}
         </div>
         <h2 className="mt-3 text-2xl font-semibold">Business report centre</h2>
-        <p className="mt-1 text-sm text-white/70">
-          Read every live report here. Business and Pro unlock polished PDF
-          downloads and WhatsApp sharing. Your plan is{" "}
-          <b className="capitalize text-white">{data.business.plan}</b>.
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/75">
+          Choose any period to review revenue and estimated profit. Download a
+          polished PDF or share it on WhatsApp with Business and Pro.
         </p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {REPORT_KINDS.map((kind) => {
-          const report = buildReportSnapshot(data, kind);
-          return (
-            <Card className="relative overflow-hidden p-5" key={kind}>
-              <div className="h-24 overflow-hidden rounded-lg bg-gradient-to-br from-sky-50 to-indigo-50 p-3 dark:from-sky-950 dark:to-indigo-950">
-                <svg viewBox="0 0 180 60" className="h-full w-full">
-                  <path
-                    d="M0 48 C25 35 35 40 55 24 S90 38 115 20 S145 32 180 8"
-                    fill="none"
-                    stroke="#7aa7e8"
-                    strokeWidth="5"
-                    opacity=".35"
-                  />
-                  <path
-                    d="M0 48 C25 35 35 40 55 24 S90 38 115 20 S145 32 180 8"
-                    fill="none"
-                    stroke="#3278c8"
-                    strokeWidth="2"
-                  />
-                </svg>
-              </div>
-              <div className="mt-4 flex items-start justify-between gap-3">
-                <div>
-                  <b className="block">{report.title}</b>
-                  <p className="mt-1 text-xs text-muted">{report.period}</p>
-                </div>
-                {!canExport && <Badge tone="red">BUSINESS</Badge>}
-              </div>
-              <p className="mt-3 min-h-12 text-sm leading-5 text-muted">
-                {report.insight}
+      <ReportDateFilter range={range} onRangeChange={onRangeChange} />
+      {exportError && (
+        <p
+          role="alert"
+          className="rounded-xl bg-red-500/10 p-3 text-sm text-red-600 dark:text-red-400"
+        >
+          {exportError}
+        </p>
+      )}
+      {performance && (
+        <section aria-label="Performance report" className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="font-semibold">Your performance report</h2>
+              <p className="mt-1 text-xs text-muted">
+                {reportPeriodLabel(range)}
               </p>
-              <div className="mt-4 grid grid-cols-2 gap-2 rounded-xl bg-black/[.025] p-3 text-xs dark:bg-white/[.04]">
-                {report.metrics.slice(0, 2).map((metric) => (
-                  <div key={metric.label}>
-                    <span className="text-muted">{metric.label}</span>
-                    <b className="mt-1 block">{metric.value}</b>
-                  </div>
-                ))}
-              </div>
-              {canExport ? (
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => create(kind)}
-                    aria-live="polite"
-                  >
-                    {labelFor(kind, "Download")}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => create(kind, true)}
-                  >
-                    WhatsApp
-                  </Button>
-                </div>
-              ) : (
-                <Button className="mt-4 w-full" onClick={() => go("Billing")}>
-                  <Lock size={15} /> Upgrade to download
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={exporting}
+                onClick={() => create("Performance")}
+                aria-live="polite"
+              >
+                {canExport ? <Download size={16} /> : <Lock size={16} />}
+                {canExport
+                  ? labelFor(downloadKey("Performance"), "Download period PDF")
+                  : "Upgrade to download"}
+              </Button>
+              {canExport && (
+                <Button
+                  variant="secondary"
+                  disabled={exporting}
+                  onClick={() => create("Performance", true)}
+                >
+                  WhatsApp
                 </Button>
               )}
+              <Button variant="ghost" onClick={() => go("Reports")}>
+                <BarChart3 size={16} /> View charts
+              </Button>
+            </div>
+          </div>
+          <ReportMetrics
+            summary={performance}
+            currency={data.business.currency}
+          />
+          <p className="text-xs text-muted">
+            Estimated net profit = revenue − recorded cost of goods − operating
+            expenses. The PDF includes every completed sale and expense in this
+            period.
+          </p>
+        </section>
+      )}
+      {[
+        {
+          title: "Reports for your period",
+          copy: "Use the dates above for sales, profit, expenses and customer requests. Today, Last 7 days and This month give you quick daily, weekly and monthly views.",
+          kinds: PERIOD_REPORT_KINDS,
+        },
+        {
+          title: "Current business snapshots",
+          copy: "Inventory, customer credit and supplier balances show your current position across all dates.",
+          kinds: REPORT_KINDS.filter((kind) =>
+            ["Inventory", "Customer Credit", "Supplier"].includes(kind),
+          ),
+        },
+      ].map((section, index) => (
+        <section
+          key={section.title}
+          aria-label={section.title}
+          className="space-y-3 pt-3"
+        >
+          <div>
+            <h2 className="font-semibold">{section.title}</h2>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">
+              {section.copy}
+            </p>
+          </div>
+          {index === 0 && error ? (
+            <Card>
+              <Empty
+                title="Check your reporting dates"
+                copy="Choose an end date on or after the start date to view and download these reports."
+              />
             </Card>
-          );
-        })}
-      </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {section.kinds.map((kind) => {
+                const report = buildReportSnapshot(
+                  data,
+                  kind,
+                  index === 0 ? range : undefined,
+                );
+                return (
+                  <Card
+                    className="flex flex-col overflow-hidden p-5"
+                    key={kind}
+                    aria-label={report.title}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="rounded-xl bg-emerald-500/10 p-3 text-accent">
+                        <FileText size={21} />
+                      </span>
+                      {!canExport && <Badge tone="red">BUSINESS</Badge>}
+                    </div>
+                    <h3 className="mt-4 font-semibold">{report.title}</h3>
+                    <p className="mt-1 text-xs text-muted">{report.period}</p>
+                    <p className="mb-4 mt-3 text-sm leading-5 text-muted">
+                      {report.insight}
+                    </p>
+                    <div className="mt-auto grid grid-cols-2 gap-3 rounded-xl bg-black/[.025] p-3 text-xs dark:bg-white/[.04]">
+                      {report.metrics.map((metric) => (
+                        <div key={metric.label}>
+                          <span className="text-muted">{metric.label}</span>
+                          <b className="mt-1 block tabular">{metric.value}</b>
+                        </div>
+                      ))}
+                    </div>
+                    {canExport ? (
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <Button
+                          variant="secondary"
+                          disabled={exporting}
+                          onClick={() => create(kind)}
+                          aria-label={`Download ${kind.toLowerCase()} report`}
+                          aria-live="polite"
+                        >
+                          {labelFor(downloadKey(kind), "Download")}
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          disabled={exporting}
+                          onClick={() => create(kind, true)}
+                          aria-label={`Share ${kind.toLowerCase()} report on WhatsApp`}
+                        >
+                          WhatsApp
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        className="mt-4 w-full"
+                        onClick={() => go("Billing")}
+                      >
+                        <Lock size={15} /> Upgrade to download
+                      </Button>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      ))}
     </div>
   );
 }
@@ -3840,7 +4027,7 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Download reports",
-      "Every report stays readable on screen. Business and Pro unlock branded PDF downloads and WhatsApp sharing under PDF Reports.",
+      "Choose From and To dates under Reports or PDF Reports to see revenue, expenses and estimated profit for that period. Business and Pro unlock PDF downloads and WhatsApp sharing.",
       "PDF Reports",
     ],
     [
@@ -3898,11 +4085,11 @@ function HelpView({ go }: { go: (p: Page) => void }) {
     ],
     [
       "Reports",
-      "View sales, profit, products, payments and performance charts, then continue to downloadable PDF reports.",
+      "Choose a date range to view revenue, profit, expenses, best-selling products and payment charts, then open PDF Reports with the same dates.",
     ],
     [
       "PDF Reports",
-      "Read current business reports on every plan. Business and Pro accounts can download or WhatsApp the branded PDF version.",
+      "Choose a custom period or a daily, weekly or monthly shortcut. View revenue and estimated profit, then download or WhatsApp a branded period PDF with Business or Pro. Current balance snapshots remain available below.",
     ],
     [
       "Staff",
