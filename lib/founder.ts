@@ -1,4 +1,4 @@
-const founderEmails = ["opiotitus333@gmail.com", "opiotituss333@gmail.com", "oyagoisaac7@gmail.com"];
+const founderEmails = ["opiotitus333@gmail.com", "oyagoisaac7@gmail.com"];
 
 export function isFounderEmail(email?: string | null) {
   if (!email) return false;
