@@ -1942,11 +1942,14 @@ function Sales({ go }: { go: (p: Page) => void }) {
   const canExport = hasMinimumPlan(data.business.plan, "business");
   const { markDownloaded, labelFor } = useDownloadFeedback();
   const [selected, setSelected] = useState<Sale | null>(null),
+    [receiptQuery, setReceiptQuery] = useState(""),
     [from, setFrom] = useState(""),
     [to, setTo] = useState("");
+  const receiptTerm = receiptQuery.trim().toLowerCase();
   const filtered = data.sales.filter((s) => {
     const date = s.createdAt.slice(0, 10);
-    return (!from || date >= from) && (!to || date <= to);
+    return (!from || date >= from) && (!to || date <= to) &&
+      s.receiptNo.toLowerCase().includes(receiptTerm);
   });
   const downloadSalesPdf = async () => {
     if (!canExport) {
@@ -1963,9 +1966,9 @@ function Sales({ go }: { go: (p: Page) => void }) {
     const snapshot: ReportSnapshot = {
       title: "Sales report",
       period: `${from || "All dates"} to ${to || "Today"}`,
-      insight: filtered.length
+      insight: (receiptTerm ? `Receipt search: ${receiptQuery.trim()}. ` : "") + (filtered.length
         ? `${filtered.length} transaction${filtered.length === 1 ? "" : "s"} are included in this report, with a recorded value of ${money(total, data.business.currency)}.`
-        : "No sales match the selected date range.",
+        : "No sales match the current search and date filters."),
       metrics: [
         {
           label: "Recorded value",
@@ -2044,6 +2047,40 @@ function Sales({ go }: { go: (p: Page) => void }) {
           {canExport ? labelFor("sales-csv", "Export CSV") : "Business • CSV"}
         </Button>
       </div>
+      <div role="search" aria-label="Sales records" className="mb-4">
+        <label htmlFor="sales-receipt-search" className="mb-2 block text-sm font-medium">
+          Search by receipt number
+        </label>
+        <div className="relative">
+          <Search size={18} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden="true" />
+          <Input
+            id="sales-receipt-search"
+            type="search"
+            placeholder="Type a full or partial receipt number…"
+            value={receiptQuery}
+            onChange={(event) => setReceiptQuery(event.target.value)}
+            aria-describedby="sales-search-summary"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="bg-surface pl-10 pr-12 [&::-webkit-search-cancel-button]:appearance-none"
+          />
+          {receiptQuery && (
+            <button
+              type="button"
+              aria-label="Clear receipt search"
+              className="focusable absolute right-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5"
+              onClick={() => setReceiptQuery("")}
+            >
+              <X size={17} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+        <p id="sales-search-summary" role="status" aria-live="polite" aria-atomic="true" className="mt-2 text-xs text-muted">
+          {filtered.length} {receiptTerm ? "matching " : ""}sale{filtered.length === 1 ? "" : "s"}
+          {from || to ? " in the selected date range." : " across all dates."}
+        </p>
+      </div>
       <Card className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-left text-sm">
           <thead>
@@ -2103,12 +2140,21 @@ function Sales({ go }: { go: (p: Page) => void }) {
         {!filtered.length && (
           <Empty
             title={
-              data.sales.length ? "No sales in this date range" : "No sales yet"
+              receiptTerm ? "No matching sales" : data.sales.length ? "No sales in this date range" : "No sales yet"
             }
             copy={
-              data.sales.length
+              receiptTerm
+                ? "Check the receipt number, or clear the search and date filters."
+                : data.sales.length
                 ? "Change the dates to include more transactions."
                 : "Your completed sales and receipts will appear here."
+            }
+            action={
+              (receiptTerm || from || to) && data.sales.length > 0 ? (
+                <Button variant="secondary" onClick={() => { setReceiptQuery(""); setFrom(""); setTo(""); }}>
+                  Clear filters
+                </Button>
+              ) : undefined
             }
           />
         )}

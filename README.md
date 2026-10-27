@@ -1,4 +1,10 @@
-# NileStock v10.4.2 — reliable business settings saves
+# NileStock v10.4.3 — find sales by receipt number
+
+## v10.4.3 sales receipt search
+
+- Search all Sales records by a full or partial receipt number, ignoring letter case and surrounding spaces. Results update immediately and continue to open the original receipt.
+- Search respects the From/To dates and shows a live result count, a clear-search button, and a useful empty state with a Clear filters action. PDF/CSV exports match the displayed results; the PDF notes an active receipt search.
+- Available on every plan, including sales older than the plan's recent Receipts list. Works with the locally available workspace while offline. Updated PWA caches to v10.4.3.
 
 ## v10.4.2 business settings
 
