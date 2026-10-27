@@ -47,12 +47,28 @@ body {
 .customer-notice {
   animation: customer-enter 180ms ease-out both;
 }
+.settings-save-notice { animation: customer-enter 220ms ease-out both; }
+.settings-save-success { animation: settings-save-pop 300ms ease-out both; }
+.settings-save-check path {
+  stroke-dasharray: 28;
+  stroke-dashoffset: 0;
+  animation: settings-save-draw 420ms ease-out both;
+}
+@keyframes settings-save-pop {
+  from { transform: scale(.7); }
+  to { transform: scale(1); }
+}
+@keyframes settings-save-draw {
+  from { stroke-dashoffset: 28; }
+  to { stroke-dashoffset: 0; }
+}
 @keyframes customer-enter {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .customer-workspace, .customer-notice { animation: none; }
+  .customer-workspace, .customer-notice, .settings-save-notice,
+  .settings-save-success, .settings-save-check path { animation: none; }
 }
 .scrollbar::-webkit-scrollbar {
   width: 5px;

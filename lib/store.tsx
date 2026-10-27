@@ -13,9 +13,13 @@ import { demoData, now, uid } from "./utils";
 import { createReceiptNumber } from "./receipt-number";
 import { saveWorkspaceBackup } from "./workspace-backup";
 import { reconcileCustomerAccounts } from "./customer-accounts";
+export type WorkspaceSyncStatus = "idle" | "saving" | "synced" | "pending" | "local" | "error";
 type Ctx = {
   data: AppData;
+  getData: () => AppData;
   setData: React.Dispatch<React.SetStateAction<AppData>>;
+  syncStatus: WorkspaceSyncStatus;
+  setSyncStatus: React.Dispatch<React.SetStateAction<WorkspaceSyncStatus>>;
   ready: boolean;
   role: "owner" | "manager" | "cashier";
   setRole: (r: "owner" | "manager" | "cashier") => void;
@@ -33,6 +37,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [data, setDataState] = useState<AppData>(demoData());
   const dataRef = useRef(data);
   const [ready, setReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<WorkspaceSyncStatus>("idle");
+  const getData = useCallback(() => dataRef.current, []);
   const [role, setRole] = useState<"owner" | "manager" | "cashier">("owner");
 
   const persistImmediately = useCallback((next: AppData) => {
@@ -84,7 +90,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const api = useMemo<Ctx>(
     () => ({
       data,
+      getData,
       setData: commitData,
+      syncStatus,
+      setSyncStatus,
       ready,
       role,
       setRole,
@@ -239,7 +248,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         }),
       reset: () => commitData(demoData()),
     }),
-    [commitData, data, ready, role],
+    [commitData, data, getData, ready, role, syncStatus],
   );
   return <AppContext.Provider value={api}>{children}</AppContext.Provider>;
 }

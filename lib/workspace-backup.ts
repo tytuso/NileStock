@@ -131,11 +131,16 @@ export function mergeWorkspaceChanges(
     return customer;
   });
 
-  if (
-    !sameValue(base.business, local.business) &&
-    sameValue(base.business, remote.business)
-  )
-    merged.business = local.business;
+  // Merge settings field by field: a theme change on another device must not
+  // discard an offline business-name or contact-details edit.
+  merged.business = { ...remote.business };
+  for (const key of Object.keys(local.business) as (keyof AppData["business"])[]) {
+    if (
+      !sameValue(base.business[key], local.business[key]) &&
+      sameValue(base.business[key], remote.business[key])
+    )
+      Object.assign(merged.business, { [key]: local.business[key] });
+  }
   if (base.onboarded !== local.onboarded && base.onboarded === remote.onboarded)
     merged.onboarded = local.onboarded;
   return reconcileCustomerAccounts(merged);

@@ -1,4 +1,12 @@
-# NileStock v10.4.1 — reports for any period
+# NileStock v10.4.2 — reliable business settings saves
+
+## v10.4.2 business settings
+
+- Business names and workspace data now commit together through `nilestock_save_workspace`. Apply `supabase/migrations/20261027143626_nilestock_atomic_business_name_save.sql` before deploying the client. Existing installed clients also benefit from the database fix.
+- Settings show a saving spinner and an animated success check only after cloud acknowledgement. Failed saves and offline changes have distinct messages; retries retain the edited form values. Owner permissions and blank-name validation are enforced in the form.
+- Reloading preserves a pending or previously saved workspace name. Independent settings fields merge across devices; a conflicting business-name edit is explained instead of showing a false success.
+- Saves are serialized, network failures retain their last confirmed revision, and sign-out no longer attempts a separate name update that could bypass the revision check. Updated PWA caches to v10.4.2.
+- Validation: TypeScript, production build, 104 automated tests, desktop/mobile browser checks for saves/reloads/errors/retries/offline reconnect/conflicts/permissions, and rollback-only database tests in `supabase/tests/workspace_save.sql`.
 
 ## v10.4.1 custom reporting periods
 

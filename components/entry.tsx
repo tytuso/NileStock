@@ -27,6 +27,7 @@ import { Button, Card, Field, Input, Modal } from "./ui";
 import { NileStockApp } from "./nilestock-app";
 import { useApp } from "@/lib/store";
 import { demoData } from "@/lib/utils";
+import { saveCloudWorkspace, WorkspaceConflictError } from "@/lib/workspace-save";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
@@ -114,7 +115,7 @@ async function withAuthTimeout<T>(operation: PromiseLike<T>) {
   }
 }
 export function Entry() {
-  const { data, setData, setRole } = useApp();
+  const { data, getData, setData, setRole, setSyncStatus } = useApp();
   const [session, setSession] = useState<Session | null | undefined>(undefined),
     [auth, setAuth] = useState<"login" | "signup" | null>(null),
     [googleProfile, setGoogleProfile] = useState(false),
@@ -137,6 +138,9 @@ export function Entry() {
     hydratingUser = useRef<string | null>(null),
     lastUploadedSales = useRef(""),
     offlineBaseline = useRef(""),
+    workspaceWriteInFlight = useRef(false),
+    workspaceConflicts = useRef(0),
+    workspaceNeedsNameSync = useRef(false),
     workspaceRevision = useRef<number | null>(null),
     workspaceBaseline = useRef<AppData | null>(null);
   useLayoutEffect(() => {
@@ -426,7 +430,7 @@ export function Entry() {
           ...workspace,
           business: {
             ...workspace.business,
-            name: businessResult.data.name,
+            name: selected.payload ? workspace.business.name?.trim() || businessResult.data.name : businessResult.data.name,
             email: workspace.business.email || email,
             plan: businessResult.data.plan as AppData["business"]["plan"],
           },
@@ -436,7 +440,7 @@ export function Entry() {
               ...cloudWorkspace,
               business: {
                 ...cloudWorkspace.business,
-                name: businessResult.data.name,
+                name: cloudWorkspace.business.name?.trim() || businessResult.data.name,
                 email: cloudWorkspace.business.email || email,
                 plan: businessResult.data.plan as AppData["business"]["plan"],
               },
@@ -471,6 +475,8 @@ export function Entry() {
         offlineBaseline.current = "";
         workspaceRevision.current = cloudRevision;
         workspaceBaseline.current = cloudBaseline;
+        workspaceNeedsNameSync.current = memberResult.data.role === "owner" &&
+          workspace.business.name !== businessResult.data.name;
         saveWorkspaceBackup(
           String(businessId),
           workspace,
@@ -558,7 +564,7 @@ export function Entry() {
   const pullCloudWorkspace = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !cloudReady || !session?.cloud || !session.businessId)
-      return;
+      return false;
     const result = await supabase
       .from("nilestock_workspace_data")
       .select("payload,revision")
@@ -570,7 +576,7 @@ export function Entry() {
           "NileStock could not refresh the shared workspace; the local copy remains safe.",
           result.error,
         );
-      return;
+      return false;
     }
 
     const revision = Number(result.data.revision || 0);
@@ -578,7 +584,7 @@ export function Entry() {
       workspaceRevision.current !== null &&
       revision <= workspaceRevision.current
     )
-      return;
+      return true;
     const remote = result.data.payload;
     setData((current) => {
       const base = workspaceBaseline.current;
@@ -586,6 +592,7 @@ export function Entry() {
       workspaceBaseline.current = remote;
       return base ? mergeWorkspaceChanges(base, current, remote) : remote;
     });
+    return true;
   }, [cloudReady, session?.businessId, session?.cloud, setData]);
 
   useEffect(() => {
@@ -609,54 +616,62 @@ export function Entry() {
     const supabase = getSupabaseBrowserClient();
     const baseline = workspaceBaseline.current;
     const expectedRevision = workspaceRevision.current;
-    if (
-      !supabase ||
-      !cloudReady ||
-      !session?.cloud ||
-      !session.businessId ||
-      !navigator.onLine ||
-      !baseline ||
-      expectedRevision === null ||
-      JSON.stringify(data) === JSON.stringify(baseline)
-    )
+    if (!session) return;
+    if (!supabase || !session.cloud) {
+      setSyncStatus("local");
+      return;
+    }
+    if (!cloudReady || !session.businessId || !navigator.onLine || !baseline || expectedRevision === null) {
+      setSyncStatus("pending");
+      return;
+    }
+    if (workspaceWriteInFlight.current ||
+      (JSON.stringify(data) === JSON.stringify(baseline) && !workspaceNeedsNameSync.current))
       return;
 
     const payload = data;
+    const businessId = session.businessId;
+    setSyncStatus("saving");
     const timeout = setTimeout(() => {
       void (async () => {
-        const result = await supabase.rpc("nilestock_save_workspace", {
-          p_business_id: session.businessId,
-          p_payload: payload,
-          p_expected_revision: expectedRevision,
-        });
-        const saved = Array.isArray(result.data)
-          ? (result.data[0] as { revision?: number } | undefined)
-          : undefined;
-        if (!result.error && typeof saved?.revision === "number") {
-          workspaceRevision.current = saved.revision;
+        workspaceWriteInFlight.current = true;
+        try {
+          const revision = await saveCloudWorkspace(supabase, businessId, payload, expectedRevision);
+          if (workspaceRevision.current !== null && workspaceRevision.current > revision) {
+            setSyncPulse((pulse) => pulse + 1);
+            return;
+          }
+          workspaceRevision.current = revision;
           workspaceBaseline.current = payload;
-          void supabase
-            .from("nilestock_businesses")
-            .update({
-              name: payload.business.name,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("id", session.businessId);
-          return;
+          workspaceNeedsNameSync.current = false;
+          workspaceConflicts.current = 0;
+          const current = getData();
+          saveWorkspaceBackup(businessId, current, revision, payload);
+          if (JSON.stringify(current) === JSON.stringify(payload)) {
+            setSyncStatus("synced");
+          } else {
+            // New edits made during a request must get their own acknowledged save.
+            setSyncPulse((pulse) => pulse + 1);
+          }
+        } catch (error) {
+          console.error("NileStock could not confirm the workspace save.", error);
+          if (error instanceof WorkspaceConflictError && workspaceConflicts.current++ < 3) {
+            // Only revision conflicts need a merge. Network errors retain the
+            // last confirmed revision so a reconnect or explicit retry can save.
+            workspaceRevision.current = null;
+            if (await pullCloudWorkspace()) setSyncPulse((pulse) => pulse + 1);
+            else setSyncStatus("error");
+          } else {
+            workspaceConflicts.current = 0;
+            setSyncStatus(navigator.onLine ? "error" : "pending");
+          }
+        } finally {
+          workspaceWriteInFlight.current = false;
         }
-        if (result.error)
-          console.error(
-            "NileStock workspace sync was retried after a newer cloud change.",
-            result.error,
-          );
-        // A conflict never overwrites the cloud snapshot. Pulling performs a
-        // three-way merge and only retries independent local changes.
-        workspaceRevision.current = null;
-        await pullCloudWorkspace();
       })();
     }, 700);
     return () => clearTimeout(timeout);
-  }, [cloudReady, data, pullCloudWorkspace, session, syncPulse]);
+  }, [cloudReady, data, getData, pullCloudWorkspace, session, setSyncStatus, syncPulse]);
   const pullCloudSales = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (
@@ -974,10 +989,6 @@ export function Entry() {
                 p_payload: data,
                 p_expected_revision: workspaceRevision.current,
               }),
-          supabase
-            .from("nilestock_businesses")
-            .update({ name: data.business.name, updated_at: updatedAt })
-            .eq("id", session.businessId),
         ];
         if (data.sales.length)
           saves.push(
