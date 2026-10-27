@@ -168,6 +168,7 @@ export type Business = {
   paper: "58mm" | "80mm" | "A4";
   theme: "light" | "dark" | "system";
   plan: PlanId;
+  adviserNotes?: string;
 };
 export type AppData = {
   products: Product[];

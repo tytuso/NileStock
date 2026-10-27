@@ -625,9 +625,11 @@ export function Entry() {
       setSyncStatus("pending");
       return;
     }
-    if (workspaceWriteInFlight.current ||
-      (JSON.stringify(data) === JSON.stringify(baseline) && !workspaceNeedsNameSync.current))
+    if (workspaceWriteInFlight.current) return;
+    if (JSON.stringify(data) === JSON.stringify(baseline) && !workspaceNeedsNameSync.current) {
+      setSyncStatus("synced");
       return;
+    }
 
     const payload = data;
     const businessId = session.businessId;

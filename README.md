@@ -1,4 +1,13 @@
-# NileStock v10.4.3 — find sales by receipt number
+# NileStock v10.5.0 — AI Business Manager
+
+## v10.5.0 AI Business Manager
+
+- The existing Luna adviser now has read-only tools for exact date-range reports, period comparisons, catalog-wide product performance, customer demand and pricing scenarios. Search covers all current and historically sold products, with pagination instead of an arbitrary first-30-products cutoff.
+- Deterministic analytics calculate tax-exclusive net sales, historical cost of goods, allocated item/order discounts, estimated gross/operating profit, cash received after change, credit repayments, expense categories and stock cover. Refunds/voids are excluded; zero costs and incomplete history are explained. Comparisons use the owner's local calendar dates and matching previous-month days.
+- Owners and managers can save a business brief (goals, target customers and constraints) inside the existing protected workspace. The adviser uses it on subsequent questions, offers affordable actions and experiments, and can refine a plan through follow-up questions. It can draft promotions and weekly checklists; it cannot change records or perform external business actions.
+- Conversation context expands to 20 bounded messages; up to 40 messages are retained on the current device with a per-business/per-user storage key. Compatible owner chat history is migrated without overwriting the saved conversation. Requests carry an explicitly checked business ID and time zone. Questions wait for workspace changes to sync.
+- The Pro plan, existing Luna provider/model and daily 50-question allowance remain. Tool loops are limited to four steps with a final answer step, context/results are bounded and answers are capped at 1200 output tokens. Provider/record-loading failures are shown and failed questions can be retried.
+- No new credentials, provider or database migration is required. Updated PWA caches to v10.5.0. Verification includes 125 automated tests (including the real AI SDK loop with a mock model), a production build, and desktop/mobile UI checks. Tests do not claim to measure live-model answer quality.
 
 ## v10.4.3 sales receipt search
 

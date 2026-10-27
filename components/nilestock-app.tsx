@@ -463,7 +463,7 @@ export function NileStockApp({
             />
           )}{" "}
           {page === "AI Adviser" && (
-            <AiAdviser openBilling={() => setPage("Billing")} />
+            <AiAdviser openBilling={() => setPage("Billing")} businessId={session.businessId} signedInEmail={session.email} />
           )}
           {page === "Inventory" && <Inventory />}
           {page === "Sales" && <Sales go={setPage} />}
