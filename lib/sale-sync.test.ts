@@ -41,6 +41,14 @@ function sale(overrides: Partial<Sale> = {}): Sale {
 }
 
 describe("cross-device sale sync", () => {
+  it("retains staff and shift links through upload, parsing and a second-device merge", () => {
+    const record = sale({ staffId: "staff-a", shiftId: "shift-a", cashier: "Edited receipt name" });
+    const row = buildCloudSaleRows([record], "business-1", "user-1")[0];
+    expect(parseCloudSale(row.payload)).toMatchObject({ staffId: "staff-a", shiftId: "shift-a" });
+    expect(parseCloudSale({ ...record, staffId: 123 })).toBeNull();
+    expect(parseCloudSale({ ...record, shiftId: {} })).toBeNull();
+    expect(mergeCloudSales(demoData(), [row.payload]).sales[0]).toMatchObject({ staffId: "staff-a", shiftId: "shift-a", cashier: "Edited receipt name" });
+  });
   it("validates and prepares sales for Supabase", () => {
     const record = sale();
     expect(parseCloudSale(record)?.synced).toBe(true);

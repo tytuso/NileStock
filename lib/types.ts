@@ -39,6 +39,9 @@ export type Sale = {
   customerId?: string;
   customerName?: string;
   cashier: string;
+  /** Staff identity is independent of the editable name printed on receipts. */
+  staffId?: string;
+  shiftId?: string;
   items: CartItem[];
   subtotal: number;
   discount: number;
@@ -129,6 +132,8 @@ export type Audit = {
 export type Shift = {
   id: string;
   cashier: string;
+  /** Absent on shifts created before staff assignment was introduced. */
+  staffId?: string;
   openedAt: string;
   closedAt?: string;
   opening: number;

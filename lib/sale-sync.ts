@@ -43,6 +43,8 @@ export function parseCloudSale(value: unknown): Sale | null {
     typeof sale.createdAt !== "string" ||
     Number.isNaN(Date.parse(sale.createdAt)) ||
     typeof sale.cashier !== "string" ||
+    (sale.staffId !== undefined && typeof sale.staffId !== "string") ||
+    (sale.shiftId !== undefined && typeof sale.shiftId !== "string") ||
     !Array.isArray(sale.items) ||
     !sale.items.every(isCartItem) ||
     !isNumber(sale.subtotal) ||

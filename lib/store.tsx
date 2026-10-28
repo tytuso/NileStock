@@ -13,6 +13,7 @@ import { demoData, now, uid } from "./utils";
 import { createReceiptNumber } from "./receipt-number";
 import { saveWorkspaceBackup } from "./workspace-backup";
 import { reconcileCustomerAccounts } from "./customer-accounts";
+import { saleStaffAssignment } from "./staff-shifts";
 export type WorkspaceSyncStatus = "idle" | "saving" | "synced" | "pending" | "local" | "error";
 type Ctx = {
   data: AppData;
@@ -129,13 +130,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           };
         }),
       completeSale: (s) => {
+        const current = dataRef.current;
+        const assignment = saleStaffAssignment(current, s.staffId);
         const createdAt = now();
         const sale: Sale = {
           ...s,
+          staffId: assignment.staffId,
+          shiftId: assignment.shiftId,
           id: uid(),
           receiptNo: createReceiptNumber(
             createdAt,
-            data.sales.map((existing) => existing.receiptNo),
+            current.sales.map((existing) => existing.receiptNo),
           ),
           createdAt,
           cashier: s.cashier.trim(),

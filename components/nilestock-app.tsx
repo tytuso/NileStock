@@ -49,7 +49,6 @@ import {
   PaymentMethod,
   Product,
   Sale,
-  Staff,
 } from "@/lib/types";
 import {
   can,
@@ -73,6 +72,7 @@ import {
   Textarea,
 } from "./ui";
 import { POS } from "./pos";
+import { StaffView } from "./staff";
 import { SettingsView } from "./settings";
 import { Customers } from "./customers";
 import { BarcodeScanner } from "./barcode-scanner";
@@ -483,7 +483,7 @@ export function NileStockApp({
           {page === "Expenses" && <Expenses />}
           {page === "Reports" && <Reports go={setPage} range={reportRange} onRangeChange={setReportRange} />}
           {page === "PDF Reports" && <PdfReports go={setPage} range={reportRange} onRangeChange={setReportRange} />}
-          {page === "Staff" && <StaffView />}
+          {page === "Staff" && <StaffView actor={session.name || session.email} signedInEmail={session.email} />}
           {page === "Audit Log" && <AuditView />}
           {page === "Settings" && <SettingsView />}
           {page === "Plan" && (
@@ -2941,183 +2941,6 @@ function Reports({
   );
 }
 
-function StaffView() {
-  const { data, setData, role } = useApp();
-  const [open, setOpen] = useState(false),
-    [shift, setShift] = useState(false);
-  return (
-    <div className="space-y-4">
-      <div className="flex justify-end gap-2">
-        <Button variant="secondary" onClick={() => setShift(true)}>
-          Manage shift
-        </Button>
-        <Button
-          disabled={!can(role, "staff-role")}
-          onClick={() => setOpen(true)}
-        >
-          <Plus size={16} /> Add staff
-        </Button>
-      </div>
-      <Card>
-        {data.staff.map((s) => (
-          <div
-            className="flex items-center gap-3 border-b border-line p-4 last:border-0"
-            key={s.id}
-          >
-            <div className="grid h-9 w-9 place-items-center rounded-full bg-black/5 font-bold">
-              {s.name[0]}
-            </div>
-            <div className="flex-1">
-              <b>{s.name}</b>
-              <span className="block text-xs text-muted">
-                {s.email} • {s.role}
-              </span>
-            </div>
-            <Badge tone={s.status === "active" ? "green" : "neutral"}>
-              {s.status}
-            </Badge>
-            {s.role !== "owner" && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setData((d) => ({
-                    ...d,
-                    staff: d.staff.map((x) =>
-                      x.id === s.id
-                        ? {
-                            ...x,
-                            status:
-                              x.status === "active" ? "disabled" : "active",
-                          }
-                        : x,
-                    ),
-                  }))
-                }
-              >
-                Toggle
-              </Button>
-            )}
-          </div>
-        ))}
-      </Card>
-      <Modal
-        open={open}
-        onClose={() => setOpen(false)}
-        title="Add staff member"
-      >
-        <form
-          action={(fd) => {
-            const s: Staff = {
-              id: uid(),
-              name: String(fd.get("name")),
-              email: String(fd.get("email")),
-              role: String(fd.get("role")) as any,
-              status: "active",
-            };
-            setData((d) => ({
-              ...d,
-              staff: [...d.staff, s],
-              audit: [
-                {
-                  id: uid(),
-                  actor: "Owner",
-                  action: "Staff added",
-                  record: s.name,
-                  createdAt: now(),
-                },
-                ...d.audit,
-              ],
-            }));
-            setOpen(false);
-          }}
-          className="grid gap-4"
-        >
-          <Field label="Name">
-            <Input name="name" required />
-          </Field>
-          <Field label="Email">
-            <Input name="email" type="email" required />
-          </Field>
-          <Field label="Role">
-            <Select name="role">
-              <option value="cashier">Cashier</option>
-              <option value="manager">Manager</option>
-            </Select>
-          </Field>
-          <Button>Add staff</Button>
-        </form>
-      </Modal>
-      <Modal open={shift} onClose={() => setShift(false)} title="Cashier shift">
-        {data.shifts.find((s) => s.status === "open") ? (
-          <form
-            action={(fd) => {
-              const counted = +String(fd.get("counted")),
-                openShift = data.shifts.find((s) => s.status === "open")!,
-                cash = data.sales
-                  .filter(
-                    (s) =>
-                      s.payment === "Cash" && s.createdAt >= openShift.openedAt,
-                  )
-                  .reduce((a, s) => a + s.total, 0);
-              setData((d) => ({
-                ...d,
-                shifts: d.shifts.map((s) =>
-                  s.id === openShift.id
-                    ? {
-                        ...s,
-                        status: "closed",
-                        closedAt: now(),
-                        counted,
-                        expected: s.opening + cash,
-                      }
-                    : s,
-                ),
-              }));
-              setShift(false);
-            }}
-            className="grid gap-4"
-          >
-            <p>
-              Open shift started{" "}
-              {new Date(
-                data.shifts.find((s) => s.status === "open")!.openedAt,
-              ).toLocaleString()}
-            </p>
-            <Field label="Counted cash">
-              <Input name="counted" type="number" required />
-            </Field>
-            <Button>Close shift & reconcile</Button>
-          </form>
-        ) : (
-          <form
-            action={(fd) => {
-              setData((d) => ({
-                ...d,
-                shifts: [
-                  {
-                    id: uid(),
-                    cashier: "Shop Owner",
-                    openedAt: now(),
-                    opening: +String(fd.get("opening")),
-                    status: "open",
-                  },
-                  ...d.shifts,
-                ],
-              }));
-              setShift(false);
-            }}
-            className="grid gap-4"
-          >
-            <Field label="Opening cash">
-              <Input name="opening" type="number" min="0" required />
-            </Field>
-            <Button>Open shift</Button>
-          </form>
-        )}
-      </Modal>
-    </div>
-  );
-}
 function AuditView() {
   const { data } = useApp();
   return (

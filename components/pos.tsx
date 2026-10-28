@@ -87,6 +87,10 @@ export function POS({
   const { data, setData, completeSale } = useApp();
   const signedInCashier = resolveCashierName(signedInName, signedInEmail);
   const canUseCustomerCredit = hasMinimumPlan(data.business.plan, "business");
+  const activeStaff = data.staff.filter((staff) => staff.status === "active");
+  const openShift = data.shifts.find((shift) => shift.status === "open");
+  const shiftStaff = activeStaff.find((staff) => staff.id === openShift?.staffId);
+  const signedInStaff = activeStaff.find((staff) => staff.email.toLowerCase() === signedInEmail.toLowerCase());
   const [cart, setCart] = useState<CartItem[]>([]),
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
@@ -95,10 +99,14 @@ export function POS({
     [payOpen, setPayOpen] = useState(false),
     [payment, setPayment] = useState<PaymentMethod>("Cash"),
     [paid, setPaid] = useState(0),
-    [receiptCashier, setReceiptCashier] = useState(signedInCashier),
+    [receiptCashier, setReceiptCashier] = useState(shiftStaff?.name || signedInCashier),
+    [saleStaffId, setSaleStaffId] = useState(shiftStaff?.id || signedInStaff?.id || ""),
+    [saleError, setSaleError] = useState(""),
     [receipt, setReceipt] = useState<Sale | null>(null),
     [scanOpen, setScanOpen] = useState(false),
     [offline, setOffline] = useState(false);
+  const assignedShift = data.shifts.find((shift) => shift.status === "open" && shift.staffId === (saleStaffId || signedInStaff?.id));
+  const finishing = useRef(false);
   const initialCustomerUsed = useRef(false);
   useEffect(() => {
     if (initialCustomerId && !initialCustomerUsed.current) {
@@ -203,30 +211,42 @@ export function POS({
           .includes(query.toLowerCase())),
   );
   const finish = () => {
+    if (finishing.current || !cart.length || !receiptCashier.trim()) return;
+    if (payment === "Cash" && paid < calc.total) return;
     if (payment === "Customer Credit" && !customer) return;
     if (!Number.isFinite(paid) || paid < 0 || (payment === "Customer Credit" && paid > calc.total)) return;
     if (!cart.every(hasValidSalePrice)) return;
-    const c = data.customers.find((x) => x.id === customer);
-    const sale = completeSale({
-      ...calc,
-      items: cart,
-      customerId: customer || undefined,
-      customerName: c?.name,
-      cashier: resolveCashierName(receiptCashier, signedInEmail),
-      payment,
-      paid: payment === "Cash" || payment === "Customer Credit" ? paid : calc.total,
-      ...(payment === "Customer Credit" ? { creditPaid: paid } : {}),
-      change: payment === "Cash" ? Math.max(0, paid - calc.total) : 0,
-      note: "",
-    });
-    setPayOpen(false);
-    setReceipt(sale);
+    finishing.current = true;
+    setSaleError("");
+    try {
+      const c = data.customers.find((x) => x.id === customer);
+      const sale = completeSale({
+        ...calc,
+        items: cart,
+        customerId: customer || undefined,
+        customerName: c?.name,
+        cashier: resolveCashierName(receiptCashier, signedInEmail),
+        staffId: saleStaffId || signedInStaff?.id,
+        payment,
+        paid: payment === "Cash" || payment === "Customer Credit" ? paid : calc.total,
+        ...(payment === "Customer Credit" ? { creditPaid: paid } : {}),
+        change: payment === "Cash" ? Math.max(0, paid - calc.total) : 0,
+        note: "",
+      });
+      setPayOpen(false);
+      setReceipt(sale);
+    } catch (cause) {
+      finishing.current = false;
+      setSaleError(cause instanceof Error ? cause.message : "The sale could not be saved. Please try again.");
+    }
   };
   if (receipt)
     return (
       <Receipt
         sale={receipt}
         onNew={() => {
+          finishing.current = false;
+          setSaleError("");
           setReceipt(null);
           setCart([]);
           setPaid(0);
@@ -611,6 +631,24 @@ export function POS({
               ))}
             </Select>
           </Field>
+          {canUseCustomerCredit && activeStaff.length > 0 && (
+            <Field label="Staff member recording this sale">
+              <Select
+                value={saleStaffId}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  setSaleStaffId(id);
+                  setReceiptCashier(activeStaff.find((staff) => staff.id === id)?.name || signedInCashier);
+                  setSaleError("");
+                }}
+              >
+                <option value="">Signed-in account ({signedInCashier})</option>
+                {saleStaffId && !activeStaff.some((staff) => staff.id === saleStaffId) && <option value={saleStaffId} disabled>Staff member no longer active — choose another</option>}
+                {activeStaff.map((staff) => <option key={staff.id} value={staff.id}>{staff.name} ({staff.email})</option>)}
+              </Select>
+              {assignedShift ? <p className="text-xs text-muted">Current shift: {assignedShift.cashier}. This sale will be linked to their shift.</p> : openShift && <p className="text-xs text-muted">This staff member has no open shift. Choose the person on shift to include this sale in their reconciliation.</p>}
+            </Field>
+          )}
           <Field label="Cashier name on receipt">
             <Input
               autoComplete="name"
@@ -620,10 +658,11 @@ export function POS({
               required
             />
             <p className="mt-1.5 text-xs text-muted">
-              Filled from the signed-in account. Edit it here only when the
-              receipt should show a different name.
+              Filled from the selected staff member or signed-in account.
+              Editing this printed name does not change the staff or shift linked to the sale.
             </p>
           </Field>
+          {saleError && <p role="alert" className="text-sm text-red-600 dark:text-red-300">{saleError}</p>}
           <Button
             className="h-12 w-full"
             disabled={
