@@ -823,6 +823,7 @@ export function Customers({
       )}
 
       <Modal
+        fullScreenMobile
         open={dialog?.type === "customer"}
         onClose={() => setDialog(null)}
         title={editingCustomer ? "Edit customer details" : "Add customer"}
@@ -1136,7 +1137,6 @@ function CustomerForm({
         <Input
           name="name"
           autoComplete="name"
-          autoFocus
           required
           maxLength={120}
           defaultValue={customer?.name}

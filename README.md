@@ -1,4 +1,11 @@
-# NileStock v10.5.3 — Mobile customer dialog and compact checkout
+# NileStock v10.5.4 — Correct mobile customer dialog placement
+
+## v10.5.4
+- Fix the underlying mobile customer-form positioning defect. Animated page containers use CSS transforms that create containing blocks for fixed-position descendants; dialogs now render in a React portal attached directly to document.body.
+- Add/Edit customer uses a full-height mobile dialog with independent vertical scrolling, an always-reachable action footer, and visual-viewport keyboard handling. Do not focus the keyboard automatically on opening this form.
+- Desktop dialogs and POS customer selection stay as before. Bumped installed-app caches. No database changes.
+
+## v10.5.3 — Mobile customer dialog and compact checkout
 
 ## v10.5.3
 - Customer account modal now has a scrollable form and persistent Create customer / Save changes actions visible on mobile screens.

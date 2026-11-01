@@ -1,6 +1,7 @@
 "use client";
 import { X, PackageOpen } from "lucide-react";
 import React from "react";
+import { createPortal } from "react-dom";
 import { twMerge } from "tailwind-merge";
 export const Button = ({
   className = "",
@@ -99,6 +100,7 @@ export function Modal({
   children,
   wide = false,
   footer,
+  fullScreenMobile = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -106,13 +108,30 @@ export function Modal({
   children: React.ReactNode;
   wide?: boolean;
   footer?: React.ReactNode;
+  fullScreenMobile?: boolean;
 }) {
+  const [visualBounds, setVisualBounds] = React.useState<{ top: number; height: number } | null>(null);
   const titleId = React.useId();
   const panel = React.useRef<HTMLDivElement>(null);
   const close = React.useRef(onClose);
   React.useEffect(() => {
     close.current = onClose;
   }, [onClose]);
+  React.useEffect(() => {
+    if (!open || !fullScreenMobile || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    const updateBounds = () => setVisualBounds({
+      top: viewport.offsetTop,
+      height: viewport.height,
+    });
+    updateBounds();
+    viewport.addEventListener("resize", updateBounds);
+    viewport.addEventListener("scroll", updateBounds);
+    return () => {
+      viewport.removeEventListener("resize", updateBounds);
+      viewport.removeEventListener("scroll", updateBounds);
+    };
+  }, [open, fullScreenMobile]);
   React.useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
@@ -122,7 +141,11 @@ export function Modal({
       const target = panel.current?.querySelector<HTMLElement>(
         "input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
       );
-      (target || panel.current)?.focus({ preventScroll: true });
+      // On phones, avoid opening the software keyboard before the user taps a field.
+      if (fullScreenMobile && window.matchMedia?.("(max-width: 639px)").matches)
+        panel.current?.focus({ preventScroll: true });
+      else
+        (target || panel.current)?.focus({ preventScroll: true });
     });
     const keydown = (event: KeyboardEvent) => {
       const dialogs = document.querySelectorAll("[data-app-modal]");
@@ -166,11 +189,17 @@ export function Modal({
       if (previouslyFocused?.isConnected)
         previouslyFocused.focus({ preventScroll: true });
     };
-  }, [open]);
-  if (!open) return null;
-  return (
+  }, [open, fullScreenMobile]);
+  if (!open || typeof document === "undefined") return null;
+  return createPortal(
     <div
-      className="fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-5"
+      className={twMerge(
+        "fixed inset-0 z-[90] flex items-end justify-center bg-black/45 p-0 backdrop-blur-[2px] sm:items-center sm:p-5",
+        fullScreenMobile && "items-stretch sm:items-center",
+      )}
+      style={fullScreenMobile && visualBounds
+        ? { top: visualBounds.top, bottom: "auto", height: visualBounds.height }
+        : undefined}
       onMouseDown={(event) => event.target === event.currentTarget && onClose()}
     >
       <div
@@ -182,6 +211,7 @@ export function Modal({
         tabIndex={-1}
         className={twMerge(
           "flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col overflow-hidden rounded-t-2xl bg-surface shadow-2xl outline-none sm:max-h-[92dvh] sm:rounded-2xl",
+          fullScreenMobile && "h-full max-h-full rounded-none sm:h-auto sm:max-h-[92dvh] sm:rounded-2xl",
           wide ? "max-w-4xl" : "max-w-lg",
         )}
       >
@@ -208,7 +238,8 @@ export function Modal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 export const Field = ({
