@@ -1,4 +1,11 @@
-# NileStock v10.5.2 — Quick customer checkout and stable sign-in
+# NileStock v10.5.3 — Mobile customer dialog and compact checkout
+
+## v10.5.3
+- Customer account modal now has a scrollable form and persistent Create customer / Save changes actions visible on mobile screens.
+- The checkout customer field is once again one dropdown: walk-in, previously saved names and "+ Add new customer" to reveal an inline name input.
+- New names continue to save with sales and appear on receipts. Installed-app caches refreshed without database changes.
+
+## v10.5.2 — Quick customer checkout and stable sign-in
 
 ## v10.5.2
 - Cashiers can enter a customer name during checkout, saving the profile and sale together; receipt identity, customer history and credit balances are linked.

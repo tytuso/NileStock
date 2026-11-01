@@ -98,12 +98,14 @@ export function Modal({
   title,
   children,
   wide = false,
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
   wide?: boolean;
+  footer?: React.ReactNode;
 }) {
   const titleId = React.useId();
   const panel = React.useRef<HTMLDivElement>(null);
@@ -179,11 +181,11 @@ export function Modal({
         aria-labelledby={titleId}
         tabIndex={-1}
         className={twMerge(
-          "max-h-[92dvh] w-full overflow-auto overscroll-contain rounded-t-2xl bg-surface shadow-2xl outline-none sm:rounded-2xl",
+          "flex max-h-[calc(100dvh-0.75rem)] min-h-0 w-full flex-col overflow-hidden rounded-t-2xl bg-surface shadow-2xl outline-none sm:max-h-[92dvh] sm:rounded-2xl",
           wide ? "max-w-4xl" : "max-w-lg",
         )}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface px-5 py-4">
+        <div className="z-10 flex shrink-0 items-center justify-between border-b border-line bg-surface px-5 py-4">
           <h2 id={titleId} className="font-semibold">
             {title}
           </h2>
@@ -197,7 +199,14 @@ export function Modal({
             <X size={18} />
           </Button>
         </div>
-        <div className="p-5">{children}</div>
+        <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain p-5">
+          {children}
+        </div>
+        {footer && (
+          <div className="z-10 shrink-0 border-t border-line bg-surface px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -826,6 +826,17 @@ export function Customers({
         open={dialog?.type === "customer"}
         onClose={() => setDialog(null)}
         title={editingCustomer ? "Edit customer details" : "Add customer"}
+        footer={dialog?.type === "customer" ? (
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setDialog(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="nilestock-customer-form">
+              <Check size={16} />
+              {editingCustomer ? "Save changes" : "Create customer"}
+            </Button>
+          </div>
+        ) : undefined}
       >
         {dialog?.type === "customer" && (
           <CustomerForm
@@ -835,7 +846,6 @@ export function Customers({
             canAddBalance={canAddBalance}
             actor={actor}
             onSave={save}
-            onCancel={() => setDialog(null)}
           />
         )}
       </Modal>
@@ -1067,14 +1077,12 @@ function CustomerForm({
   canAddBalance,
   actor,
   onSave,
-  onCancel,
 }: {
   customer?: Contact;
   currency: string;
   canAddBalance: boolean;
   actor: string;
   onSave: SaveAccount;
-  onCancel: () => void;
 }) {
   const [hasBalance, setHasBalance] = useState(false);
   const [error, setError] = useState("");
@@ -1118,7 +1126,7 @@ function CustomerForm({
     }
   };
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form id="nilestock-customer-form" onSubmit={submit} className="space-y-4">
       <p className="text-sm leading-6 text-muted">
         {customer
           ? "Keep their contact information and notes up to date."
@@ -1215,15 +1223,6 @@ function CustomerForm({
         </div>
       )}
       {error && <FormError message={error} />}
-      <div className="flex justify-end gap-2 border-t border-line pt-4">
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit">
-          <Check size={16} />
-          {customer ? "Save changes" : "Create customer"}
-        </Button>
-      </div>
     </form>
   );
 }
