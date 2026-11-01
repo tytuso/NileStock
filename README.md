@@ -1,4 +1,12 @@
-# NileStock v10.5.0 — AI Business Manager
+# NileStock v10.5.2 — Quick customer checkout and stable sign-in
+
+## v10.5.2
+- Cashiers can enter a customer name during checkout, saving the profile and sale together; receipt identity, customer history and credit balances are linked.
+- Customer phone numbers are optional. Saved names are detected to prevent accidental duplicate profiles; choose an existing customer to link repeat purchases.
+- Removes the hard reload when a cached offline lease expires. Paid offline access is restricted in place; online login waits for Auth to verify instead of flashing an old session.
+- Installed-app caches updated; no database migration required.
+
+## v10.5.0 — AI Business Manager
 
 ## v10.5.0 AI Business Manager
 

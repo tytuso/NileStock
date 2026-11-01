@@ -102,8 +102,10 @@ export function saveCustomerDetails(
   data = reconcileCustomerAccounts(data);
   const name = details.name.trim();
   const phone = details.phone.trim();
-  if (!name || !phone)
-    throw new Error("Enter the customer's name and phone number.");
+  if (!name)
+    throw new Error("Enter the customer's name.");
+  if (name.length > 120 || phone.length > 40)
+    throw new Error("Check the customer name and phone number lengths.");
   const existing = data.customers.find(
     (customer) => customer.id === details.id,
   );

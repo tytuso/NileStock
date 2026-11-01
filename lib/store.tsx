@@ -12,7 +12,8 @@ import { AppData, CartItem, Expense, Product, Purchase, Sale } from "./types";
 import { demoData, now, uid } from "./utils";
 import { createReceiptNumber } from "./receipt-number";
 import { saveWorkspaceBackup } from "./workspace-backup";
-import { reconcileCustomerAccounts } from "./customer-accounts";
+import { reconcileCustomerAccounts, creditSaleBalance } from "./customer-accounts";
+import { resolveCheckoutCustomer } from "./checkout-customer";
 import { saleStaffAssignment } from "./staff-shifts";
 export type WorkspaceSyncStatus = "idle" | "saving" | "synced" | "pending" | "local" | "error";
 type Ctx = {
@@ -26,7 +27,7 @@ type Ctx = {
   setRole: (r: "owner" | "manager" | "cashier") => void;
   addProduct: (p: Omit<Product, "id" | "createdAt">) => void;
   completeSale: (
-    s: Omit<Sale, "id" | "receiptNo" | "createdAt" | "status" | "synced">,
+    s: Omit<Sale, "id" | "receiptNo" | "createdAt" | "status" | "synced"> & { newCustomerName?: string },
   ) => Sale;
   addExpense: (e: Omit<Expense, "id">) => void;
   receivePurchase: (p: Omit<Purchase, "id">) => void;
@@ -133,8 +134,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const current = dataRef.current;
         const assignment = saleStaffAssignment(current, s.staffId);
         const createdAt = now();
+        const { newCustomerName, ...saleInput } = s;
+        const customer = resolveCheckoutCustomer(
+          current.customers, { customerId: s.customerId, newCustomerName }, createdAt, uid,
+        );
+        if (s.payment === "Customer Credit" && !customer.customerId)
+          throw new Error("Select or enter a customer for a credit sale.");
         const sale: Sale = {
-          ...s,
+          ...saleInput,
+          customerId: customer.customerId,
+          customerName: customer.customerName,
           staffId: assignment.staffId,
           shiftId: assignment.shiftId,
           id: uid(),
@@ -167,18 +176,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             })),
             ...d.movements,
           ],
-          customers: d.customers.map((c) =>
-            c.id === s.customerId
-              ? {
-                  ...c,
-                  total: c.total + s.total,
-                  balance:
-                    c.balance + (s.payment === "Customer Credit" ? s.total : 0),
-                  lastActivity: sale.createdAt,
-                }
-              : c,
-          ),
+          customers: [
+            ...(customer.newCustomer ? [customer.newCustomer] : []),
+            ...d.customers.map((c) =>
+              c.id === sale.customerId
+                ? {
+                    ...c,
+                    total: c.total + sale.total,
+                    balance: c.balance + creditSaleBalance(sale),
+                    lastActivity: sale.createdAt,
+                  }
+                : c,
+            ),
+          ],
           audit: [
+            ...(customer.newCustomer ? [{
+              id: uid(),
+              actor: sale.cashier,
+              action: "Customer created at checkout",
+              record: customer.newCustomer.name,
+              createdAt: sale.createdAt,
+            }] : []),
             {
               id: uid(),
               actor: sale.cashier,

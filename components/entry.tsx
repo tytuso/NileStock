@@ -183,14 +183,15 @@ export function Entry() {
       const cachedSessionRaw = localStorage.getItem("nilestock.session");
       if (cachedSessionRaw) {
         const cached = JSON.parse(cachedSessionRaw) as Session;
-        if (cached?.email) setSession(cached);
+        // Online sign-in waits for Auth verification rather than flashing stale UI.
+        if (cached?.email && !navigator.onLine) setSession(cached);
       }
     } catch {
       // Cloud authentication below remains authoritative.
     }
 
     const sessionFallback = window.setTimeout(() => {
-      if (active)
+      if (active && !hydratingUser.current)
         setSession((current) => (current === undefined ? null : current));
     }, 12000);
 
@@ -556,11 +557,26 @@ export function Entry() {
     };
   }, [setData, setRole]);
   useEffect(() => {
-    if (!session?.offlineLeaseExpiresAt || session.lastVerifiedPlan === "free") return;
-    const delay = Math.max(0, session.offlineLeaseExpiresAt - Date.now() + 750);
-    const timer = window.setTimeout(() => window.location.reload(), delay);
+    // Do not reload on an expired cached offline lease. It can trigger a refresh loop.
+    if (!session?.cloud || !session.businessId || !session.offlineLeaseExpiresAt ||
+        session.offlineRestricted || session.lastVerifiedPlan === "free") return;
+    const businessId = session.businessId;
+    const expiresAt = session.offlineLeaseExpiresAt;
+    const timer = window.setTimeout(() => {
+      if (navigator.onLine || Date.now() < expiresAt) return;
+      // Preserve the workspace and restrict paid features in place.
+      setData((current) => current.business.plan === "free"
+        ? current : { ...current, business: { ...current.business, plan: "free" } });
+      setSession((current) => {
+        if (!current?.cloud || current.businessId !== businessId ||
+            current.offlineLeaseExpiresAt !== expiresAt || current.offlineRestricted) return current;
+        const next = { ...current, offlineRestricted: true };
+        localStorage.setItem("nilestock.session", JSON.stringify(next));
+        return next;
+      });
+    }, Math.max(0, expiresAt - Date.now() + 750));
     return () => window.clearTimeout(timer);
-  }, [session?.lastVerifiedPlan, session?.offlineLeaseExpiresAt]);
+  }, [session?.businessId, session?.cloud, session?.offlineLeaseExpiresAt, session?.offlineRestricted, session?.lastVerifiedPlan, setData]);
   const pullCloudWorkspace = useCallback(async () => {
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !cloudReady || !session?.cloud || !session.businessId)

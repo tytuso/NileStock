@@ -96,6 +96,7 @@ export function POS({
     [category, setCategory] = useState("All"),
     [discount, setDiscount] = useState(0),
     [customer, setCustomer] = useState(initialCustomerId || ""),
+    [newCustomerName, setNewCustomerName] = useState(""),
     [payOpen, setPayOpen] = useState(false),
     [payment, setPayment] = useState<PaymentMethod>("Cash"),
     [paid, setPaid] = useState(0),
@@ -213,7 +214,7 @@ export function POS({
   const finish = () => {
     if (finishing.current || !cart.length || !receiptCashier.trim()) return;
     if (payment === "Cash" && paid < calc.total) return;
-    if (payment === "Customer Credit" && !customer) return;
+    if (payment === "Customer Credit" && !customer && !newCustomerName.trim()) return;
     if (!Number.isFinite(paid) || paid < 0 || (payment === "Customer Credit" && paid > calc.total)) return;
     if (!cart.every(hasValidSalePrice)) return;
     finishing.current = true;
@@ -225,6 +226,7 @@ export function POS({
         items: cart,
         customerId: customer || undefined,
         customerName: c?.name,
+        newCustomerName: customer ? undefined : newCustomerName,
         cashier: resolveCashierName(receiptCashier, signedInEmail),
         staffId: saleStaffId || signedInStaff?.id,
         payment,
@@ -252,6 +254,7 @@ export function POS({
           setPaid(0);
           setDiscount(0);
           setCustomer("");
+          setNewCustomerName("");
         }}
       />
     );
@@ -611,19 +614,35 @@ export function POS({
               </div>
             </>
           )}
-          <Field
-            label={
-              payment === "Customer Credit"
-                ? "Customer (required)"
-                : "Customer (optional)"
-            }
-          >
+          <Field label={payment === "Customer Credit" ? "Customer name (required)" : "Customer name (optional)"}>
+            <Input
+              aria-label="New customer name"
+              autoComplete="off"
+              maxLength={120}
+              placeholder="Type a new customer's name"
+              value={newCustomerName}
+              onChange={(event) => {
+                setNewCustomerName(event.target.value);
+                if (event.target.value.trim()) setCustomer("");
+                setSaleError("");
+              }}
+            />
+            <p className="mt-1.5 text-xs text-muted">
+              The name is added to Customers automatically when you complete this sale.
+              Leave blank for a walk-in, or choose a saved customer below.
+            </p>
+          </Field>
+          <Field label="Or select an existing customer">
             <Select
-              aria-label={payment === "Customer Credit" ? "Customer (required)" : "Customer (optional)"}
+              aria-label="Existing customer"
               value={customer}
-              onChange={(e) => setCustomer(e.target.value)}
+              onChange={(event) => {
+                setCustomer(event.target.value);
+                if (event.target.value) setNewCustomerName("");
+                setSaleError("");
+              }}
             >
-              <option value="">Walk-in customer</option>
+              <option value="">No saved customer selected</option>
               {data.customers.map((c) => (
                 <option value={c.id} key={c.id}>
                   {c.name}
@@ -667,7 +686,7 @@ export function POS({
             className="h-12 w-full"
             disabled={
               (payment === "Cash" && paid < calc.total) ||
-              (payment === "Customer Credit" && !customer) ||
+              (payment === "Customer Credit" && !customer && !newCustomerName.trim()) ||
               !Number.isFinite(paid) || paid < 0 ||
               (payment === "Customer Credit" && paid > calc.total) ||
               !receiptCashier.trim()

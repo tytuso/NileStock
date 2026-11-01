@@ -1136,12 +1136,11 @@ function CustomerForm({
         />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Phone number">
+        <Field label="Phone number (optional)">
           <Input
             name="phone"
             type="tel"
             autoComplete="tel"
-            required
             maxLength={40}
             defaultValue={customer?.phone}
             placeholder="e.g. 0772 123 456"
